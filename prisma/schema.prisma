@@ -1,0 +1,563 @@
+// Prisma Schema for AuraReserve
+// PostgreSQL database schema for multi-tenant reserve auditing platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// User model - Authentication and authorization
+model User {
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  name                  String    @default("") // Better Auth standard field
+  fullName              String?   @map("full_name") // Legacy field
+  company               String?
+  role                  UserRole? // Platform role (OWNER/ADMIN), null for space-only users
+  password              String?   // Nullable for SSO-only users
+  authProvider          AuthProvider @default(CREDENTIALS) @map("auth_provider")
+  providerId            String?   @map("provider_id") // OAuth provider user ID
+  image                 String?   // Profile image URL
+  emailVerified         Boolean   @default(false) @map("email_verified") // Better Auth expects boolean
+  isActive              Boolean   @default(true) @map("is_active")
+  lastLogin             DateTime? @map("last_login")
+  invitedBy             String?   @map("invited_by") // User ID who invited this user
+  createdAt             DateTime  @default(now()) @map("created_at") // Better Auth standard field
+  updatedAt             DateTime  @updatedAt @default(now()) @map("updated_at") // Better Auth standard field
+  createdDate           DateTime  @default(now()) @map("created_date") // Legacy field
+  // 2FA fields (Better Auth twoFactor plugin)
+  twoFactorEnabled      Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret       String?   @map("two_factor_secret")
+  twoFactorBackupCodes  String?   @map("two_factor_backup_codes") // JSON array stored as string
+
+  // Relations
+  createdSpaces       Space[]          @relation("SpaceCreator")
+  integrationApiKeysCreated  IntegrationApiKey[]  @relation("IntegrationApiKeyCreator")
+  createdStreams      DataStream[]     @relation("StreamCreator")
+  submittedEntries    StreamEntry[]    @relation("EntrySubmitter")
+  auditLogs           AuditLog[]
+  spaceMembers        SpaceUser[]      // Space-level permissions
+  groupMemberships    GroupMember[]
+  inviter             User?            @relation("UserInvitations", fields: [invitedBy], references: [id])
+  invitedUsers        User[]           @relation("UserInvitations")
+  accounts            Account[]        // OAuth accounts
+  sessions            Session[]        // User sessions
+
+  @@index([email])
+  @@index([role])
+  @@index([authProvider])
+  @@map("users")
+}
+
+enum UserRole {
+  OWNER       @map("owner")        // Super admin - full platform access, can manage owners
+  ADMIN       @map("admin")        // Platform admin - can create spaces, manage users (except owners)
+  CREATOR     @map("creator")      // Can create spaces, no admin privileges
+
+  @@map("user_role")
+}
+
+enum AuthProvider {
+  CREDENTIALS @map("credentials")  // Username/password
+  GOOGLE      @map("google")       // Google OAuth
+  AZURE       @map("azure")        // Microsoft Azure AD
+
+  @@map("auth_provider")
+}
+
+// SpaceUser model - Space-level permissions (junction table)
+model SpaceUser {
+  id          String        @id @default(cuid())
+  userId      String        @map("user_id")
+  spaceId     String        @map("space_id")
+  role        SpaceRole     @default(MEMBER)
+  createdDate DateTime      @default(now()) @map("created_date")
+
+  // Relations
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space       Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, spaceId]) // A user can only have one role per space
+  @@index([userId])
+  @@index([spaceId])
+  @@map("space_users")
+}
+
+enum SpaceRole {
+  ADMIN       @map("admin")    // Can manage space settings, members, and all data operations
+  AUDITOR     @map("auditor")  // Can view data and submit/archive PoR entries
+  MEMBER      @map("member")   // Read-only access to space data
+
+  @@map("space_role")
+}
+
+// Group model - Named list of users within a space
+model Group {
+  id          String        @id @default(cuid())
+  spaceId     String        @map("space_id")
+  name        String
+  createdDate DateTime      @default(now()) @map("created_date")
+
+  space       Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  members     GroupMember[]
+  integrations SpaceIntegration[]
+
+  @@index([spaceId])
+  @@map("groups")
+}
+
+// GroupMember model - Junction table for group membership
+model GroupMember {
+  id          String   @id @default(cuid())
+  groupId     String   @map("group_id")
+  userId      String   @map("user_id")
+  createdDate DateTime @default(now()) @map("created_date")
+
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("group_members")
+}
+
+// Account model - OAuth provider accounts (Better Auth)
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String    @map("user_id")
+  accountId             String    @map("account_id") // Provider's user ID
+  providerId            String    @map("provider_id") // Provider name (google, microsoft, etc)
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  idToken               String?   @map("id_token")
+  password              String?   // For credential accounts
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+// Session model - User sessions (Better Auth)
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("sessions")
+}
+
+// Verification model - Email verification tokens (Better Auth)
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String   // Email address or other identifier
+  value      String   // Token value
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+// Space model - Pure organizational container for reserve tracking
+model Space {
+  id                 String      @id @default(cuid())
+  name               String
+  description        String      @default("")
+  slug               String      @unique
+  apiIdentifier      String      @unique @map("api_identifier")
+  apiIdentifierSource ApiIdentifierSource @default(SLUG) @map("api_identifier_source")
+  isActive           Boolean     @default(true) @map("is_active")
+  verificationPublic Boolean     @default(true) @map("verification_public")
+  createdBy          String      @map("created_by")
+  createdDate        DateTime    @default(now()) @map("created_date")
+
+  // Relations
+  creator             User        @relation("SpaceCreator", fields: [createdBy], references: [id])
+  apiCalls            ApiCall[]
+  auditLogs           AuditLog[]
+  spaceUsers          SpaceUser[] // Space members with permissions
+  dataStreams         DataStream[]
+  groups                  Group[]
+  spaceIntegrations       SpaceIntegration[]
+  integrationEntitlements IntegrationEntitlement[]
+
+  @@index([createdBy])
+  @@index([isActive])
+  @@map("spaces")
+}
+
+model AssetType {
+  value        String   @id
+  label        String
+  icon         String?
+  description  String?
+  createdDate  DateTime @default(now()) @map("created_date")
+
+  @@map("asset_types")
+}
+
+// IntegrationApiKey model - Per-integration API access
+model IntegrationApiKey {
+  id                  String           @id @default(cuid())
+  spaceIntegrationId  String           @map("space_integration_id")
+  name                String
+  apiKey              String           @unique @map("api_key") // SHA-256 hash
+  keyPrefix           String           @default("") @map("key_prefix")
+  isActive            Boolean          @default(true) @map("is_active")
+  allowedOrigins      String[]         @default([]) @map("allowed_origins")
+  usageCount          Int              @default(0) @map("usage_count")
+  lastUsed            DateTime?        @map("last_used")
+  createdBy           String           @map("created_by")
+  createdDate         DateTime         @default(now()) @map("created_date")
+
+  // Relations
+  spaceIntegration    SpaceIntegration @relation(fields: [spaceIntegrationId], references: [id], onDelete: Cascade)
+  creator             User             @relation("IntegrationApiKeyCreator", fields: [createdBy], references: [id])
+  apiCalls            ApiCall[]
+
+  @@index([spaceIntegrationId])
+  @@index([apiKey])
+  @@index([isActive])
+  @@map("integration_api_keys")
+}
+
+// ApiCall model - API usage logs
+model ApiCall {
+  id          String   @id @default(cuid())
+  spaceId     String   @map("space_id")
+  apiKeyId    String?  @map("api_key_id")
+  ipAddress   String   @map("ip_address")
+  userAgent   String   @map("user_agent")
+  statusCode  Int      @map("status_code")
+  responseTimeMs Int?  @map("response_time_ms")
+  createdDate DateTime @default(now()) @map("created_date")
+
+  // Relations
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  apiKey      IntegrationApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([spaceId])
+  @@index([apiKeyId])
+  @@index([createdDate])
+  @@map("api_calls")
+}
+
+// AuditLog model - Activity tracking
+model AuditLog {
+  id           String         @id @default(cuid())
+  action       AuditAction
+  resourceType ResourceType   @map("resource_type")
+  resourceId   String         @map("resource_id")
+  userEmail    String         @map("user_email")
+  spaceId      String?        @map("space_id")
+  ipAddress    String         @map("ip_address")
+  userAgent    String         @map("user_agent")
+  details      Json           @default("{}")
+  oldValues    Json?          @map("old_values")
+  newValues    Json?          @map("new_values")
+  createdDate  DateTime       @default(now()) @map("created_date")
+
+  // Relations
+  user         User           @relation(fields: [userEmail], references: [email])
+  space        Space?         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([userEmail])
+  @@index([resourceType])
+  @@index([resourceId])
+  @@index([spaceId])
+  @@index([createdDate])
+  @@map("audit_logs")
+}
+
+enum AuditAction {
+  CREATE     @map("create")
+  UPDATE     @map("update")
+  DELETE     @map("delete")
+  API_ACCESS @map("api_access")
+  LOGIN      @map("login")
+  LOGOUT     @map("logout")
+  ARCHIVE    @map("archive")
+  RESTORE    @map("restore")
+
+  @@map("audit_action")
+}
+
+enum ResourceType {
+  SPACE            @map("space")
+  API_KEY          @map("api_key")
+  USER             @map("user")
+  SPACE_MEMBER     @map("space_member")
+  SETTINGS         @map("settings")
+  DATA_STREAM      @map("data_stream")
+  STREAM_ENTRY     @map("stream_entry")
+  INTEGRATION      @map("integration")
+  GROUP            @map("group")
+
+  @@map("resource_type")
+}
+
+enum ApiIdentifierSource {
+  SLUG   @map("slug")
+  CUSTOM @map("custom")
+
+  @@map("api_identifier_source")
+}
+
+enum ArtifactType {
+  VALUE             @map("value")              // Simple numeric value (e.g., 1000 grams of gold)
+  MERKLE_TREE       @map("merkle_tree")        // Standard merkle tree (hash-based proofs)
+  MERKLE_SUM_TREE   @map("merkle_sum_tree")    // Merkle sum tree (nodes carry balances, used for exchange PoR)
+  SPARSE_MERKLE_TREE @map("sparse_merkle_tree") // Fixed-size sparse merkle tree (membership/non-membership proofs)
+
+  @@map("artifact_type")
+}
+
+// ============================================================================
+// DATA STREAMS SYSTEM
+// ============================================================================
+
+// DataStream model - Central abstraction connecting inputs to outputs
+model DataStream {
+  id           String       @id @default(cuid())
+  spaceId      String       @map("space_id")
+  name         String
+  slug         String
+  artifactType ArtifactType @map("artifact_type")
+  assetType    String?      @map("asset_type")
+  unit         String?
+  valueField   String?      @map("value_field")
+  description  String       @default("")
+  isActive     Boolean      @default(true) @map("is_active")
+  createdBy    String       @map("created_by")
+  createdDate  DateTime     @default(now()) @map("created_date")
+
+  // Relations
+  space        Space              @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  creator      User               @relation("StreamCreator", fields: [createdBy], references: [id])
+  entries      StreamEntry[]
+  integrations SpaceIntegration[]
+
+  @@unique([spaceId, slug])
+  @@index([spaceId])
+  @@map("data_streams")
+}
+
+// StreamEntry model - Time-series entries within a stream (immutable audit records)
+model StreamEntry {
+  id                   String       @id @default(cuid())
+  streamId             String       @map("stream_id")
+  artifactType         ArtifactType @map("artifact_type") // Denormalized from stream
+  value                Float?                              // For VALUE artifact type
+  artifactData         Json?        @map("artifact_data")  // For complex types (tree structure, root hash, metadata)
+  submittedBy          String       @map("submitted_by")
+  sourceIntegrationId  String?      @map("source_integration_id")
+  isAutomated          Boolean      @default(false) @map("is_automated")
+  timestamp            DateTime     @default(now())        // When data was recorded
+  ripcord              Boolean      @default(false)
+  ripcordDetails       String[]     @default([]) @map("ripcord_details")
+  notes                String       @default("")
+  supportingDocuments  String[]     @default([]) @map("supporting_documents")
+  metadata             Json         @default("{}")
+  archived             Boolean      @default(false)
+  archivedAt           DateTime?    @map("archived_at")
+  archivedReason       String?      @map("archived_reason")
+  createdDate          DateTime     @default(now()) @map("created_date")
+
+  // Relations
+  stream               DataStream         @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  submitter            User               @relation("EntrySubmitter", fields: [submittedBy], references: [id])
+  sourceIntegration    SpaceIntegration?  @relation("EntrySource", fields: [sourceIntegrationId], references: [id], onDelete: SetNull)
+  leaves               StreamEntryLeaf[]
+
+  @@index([streamId])
+  @@index([streamId, timestamp])
+  @@index([submittedBy])
+  @@index([sourceIntegrationId])
+  @@map("stream_entries")
+}
+
+// StreamEntryLeaf model - Individual leaves in merkle-type entries
+model StreamEntryLeaf {
+  id          String      @id @default(cuid())
+  entryId     String      @map("entry_id")
+  leafId      String      @map("leaf_id")
+  leafHash    String      @map("leaf_hash")
+  value       Float?
+  leafData    Json        @map("leaf_data")
+  leafIndex   Int         @map("leaf_index")
+  createdDate DateTime    @default(now()) @map("created_date")
+
+  // Relations
+  entry       StreamEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+  @@index([leafId])
+  @@index([entryId, leafId])
+  @@index([leafHash])
+  @@map("stream_entry_leaves")
+}
+
+// Integration model - Global catalog of built-in capabilities (replaces PluginDefinition)
+model Integration {
+  id                    String         @id @default(cuid())
+  key                   String         @unique
+  displayName           String         @map("display_name")
+  description           String         @default("")
+  supportsInput         Boolean        @default(false) @map("supports_input")
+  supportsOutput        Boolean        @default(false) @map("supports_output")
+  supportedArtifactTypes ArtifactType[] @map("supported_artifact_types")
+  isActive              Boolean        @default(true) @map("is_active")
+  isFree                Boolean        @default(false) @map("is_free")
+  supportedTriggers     IntegrationTrigger[] @map("supported_triggers")
+  defaultTrigger        IntegrationTrigger?  @map("default_trigger")
+  configSchema          Json           @default("{}") @map("config_schema")
+  defaultSchedule       String?        @map("default_schedule")
+  isAvailableSelfHosted Boolean        @default(true) @map("is_available_self_hosted")
+  bundleKey             String?        @map("bundle_key")
+  createdDate           DateTime       @default(now()) @map("created_date")
+
+  // Relations
+  spaceIntegrations     SpaceIntegration[]
+
+  @@index([isActive])
+  @@index([bundleKey])
+  @@map("integrations")
+}
+
+// SpaceIntegration model - Configured input source or output destination (replaces SpacePlugin)
+model SpaceIntegration {
+  id             String          @id @default(cuid())
+  spaceId        String          @map("space_id")
+  integrationId  String          @map("integration_id")
+  streamId       String?         @map("stream_id")
+  accessGroupId  String?         @map("access_group_id")
+  direction      IntegrationDirection
+  status         IntegrationStatus    @default(ACTIVE)
+  config         Json            @default("{}")
+  schedule       String?
+  trigger        IntegrationTrigger?
+  lastRunAt      DateTime?       @map("last_run_at")
+  lastRunStatus  String?         @map("last_run_status")
+  metadata       Json            @default("{}")
+  createdDate    DateTime        @default(now()) @map("created_date")
+
+  // Relations
+  space          Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  integration    Integration     @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  stream         DataStream?     @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  accessGroup    Group?          @relation(fields: [accessGroupId], references: [id], onDelete: SetNull)
+  createdEntries StreamEntry[]      @relation("EntrySource")
+  apiKeys        IntegrationApiKey[]
+  runLogs        IntegrationRunLog[]
+
+  @@index([spaceId, integrationId, streamId, direction])
+  @@index([spaceId])
+  @@index([integrationId])
+  @@index([streamId])
+  @@index([status])
+  @@map("space_integrations")
+}
+
+// IntegrationRunLog model - Execution history for integration runs (replaces PluginRunLog)
+model IntegrationRunLog {
+  id                  String           @id @default(cuid())
+  spaceIntegrationId  String           @map("space_integration_id")
+  status              String
+  message             String?
+  requestPayload      Json?            @map("request_payload")
+  responsePayload     Json?            @map("response_payload")
+  durationMs          Int?             @map("duration_ms")
+  createdDate         DateTime         @default(now()) @map("created_date")
+
+  // Relations
+  spaceIntegration    SpaceIntegration @relation(fields: [spaceIntegrationId], references: [id], onDelete: Cascade)
+
+  @@index([spaceIntegrationId])
+  @@index([createdDate])
+  @@map("integration_run_logs")
+}
+
+// IntegrationEntitlement model - Paid integration access control per space (replaces PluginEntitlement)
+model IntegrationEntitlement {
+  id             String                  @id @default(cuid())
+  spaceId        String                  @map("space_id")
+  integrationKey String                  @map("integration_key")
+  status         EntitlementStatus @default(ACTIVE)
+  source         String                  @default("manual")
+  activatedAt    DateTime                @default(now()) @map("activated_at")
+  expiresAt      DateTime?               @map("expires_at")
+  createdDate    DateTime                @default(now()) @map("created_date")
+
+  // Relations
+  space          Space                   @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, integrationKey])
+  @@index([spaceId])
+  @@index([integrationKey])
+  @@index([status])
+  @@map("integration_entitlements")
+}
+
+// Setting model - Key-value store for global application settings
+model Setting {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedBy   String?  @map("updated_by")
+
+  @@map("settings")
+}
+
+enum IntegrationDirection {
+  INPUT  @map("input")
+  OUTPUT @map("output")
+
+  @@map("integration_direction")
+}
+
+enum IntegrationTrigger {
+  MANUAL    @map("manual")
+  CRON      @map("cron")
+  ON_CHANGE @map("on_change")
+
+  @@map("integration_trigger")
+}
+
+enum IntegrationStatus {
+  ACTIVE   @map("active")
+  INACTIVE @map("inactive")
+  ERROR    @map("error")
+
+  @@map("integration_status")
+}
+
+enum EntitlementStatus {
+  ACTIVE   @map("active")
+  INACTIVE @map("inactive")
+  EXPIRED  @map("expired")
+
+  @@map("entitlement_status")
+}
+

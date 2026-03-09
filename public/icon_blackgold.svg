@@ -1,0 +1,26 @@
+<svg width="175.3" height="198.77"
+     viewBox="-0.15 -0.15 46.682 52.891"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <defs>
+    <!-- Fill gradient -->
+    <linearGradient id="shieldFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#F0B102"/>
+      <stop offset="100%" stop-color="#E27200"/>
+    </linearGradient>
+
+    <!-- Border gradient -->
+    <linearGradient id="shieldStroke" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#fefbeb"/>
+      <stop offset="100%" stop-color="#F6C020"/>
+    </linearGradient>
+  </defs>
+
+  <path
+    d="M23.132 0c-.445 0-.89.11-1.285.32L3.702 6.49C.009 7.746-.011 9.101 0 11.984c.026 6.059-.189 18.583 2.145 23.403 3.489 7.207 11.086 12.504 18.494 16.544 1.614.88 3.488.88 5.102 0 6.269-3.419 14.769-9.372 18.404-16.544 2.427-4.79 2.205-16.618 2.235-23.423.01-2.884.038-4.17-3.701-5.474L24.427.32C24.02.11 23.577 0 23.132 0zm.122 12.072l5.547 4.15 5.547 4.151V36.288H29.85l-.01-6.813-.01-6.68c-6.41-4.31-6.576-4.377-6.577-4.378 0 0-.19.09-6.612 4.377v13.494h-4.518V20.374l5.565-4.151 5.566-4.151z"
+    fill="#000"
+    stroke="url(#shieldStroke)"
+    stroke-width="0.3"
+    stroke-linejoin="round"
+  />
+</svg>

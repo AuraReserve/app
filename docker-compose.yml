@@ -1,0 +1,69 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:18-alpine
+    container_name: aurareserve-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aurareserve}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-aurareserve}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - aurareserve-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aurareserve}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # AuraReserve Application
+  app:
+    image: aurareserve-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aurareserve-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aurareserve}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aurareserve}?schema=public
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+
+      # Public-facing URL (used server-side for auth callbacks, etc.)
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      NEXT_PUBLIC_AUTH_GOOGLE_ENABLED: ${NEXT_PUBLIC_AUTH_GOOGLE_ENABLED:-false}
+      NEXT_PUBLIC_AUTH_AZURE_ENABLED: ${NEXT_PUBLIC_AUTH_AZURE_ENABLED:-false}
+
+      # Seed database on first run (set to "true" to enable, then remove after first deploy)
+      SEED_DATABASE: ${SEED_DATABASE:-false}
+
+      # Optional: OAuth providers
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      AZURE_AD_CLIENT_ID: ${AZURE_AD_CLIENT_ID:-}
+      AZURE_AD_CLIENT_SECRET: ${AZURE_AD_CLIENT_SECRET:-}
+      AZURE_AD_TENANT_ID: ${AZURE_AD_TENANT_ID:-}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    networks:
+      - aurareserve-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  aurareserve-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

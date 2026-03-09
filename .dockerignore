@@ -1,0 +1,39 @@
+# Dependencies
+node_modules
+
+# Build output
+.next
+out
+dist
+
+# Git
+.git
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+tests
+coverage
+vitest.config.ts
+vitest.setup.ts
+
+# Docs
+docs
+*.md
+!package.json
+
+# Docker
+docker-compose.yml
