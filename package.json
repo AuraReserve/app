@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -28,6 +28,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
+    "db:deploy-defaults": "node -e \"const fs=require('fs'),{Client}=require('pg');(async()=>{const c=new Client({connectionString:process.env.DATABASE_URL});await c.connect();await c.query(fs.readFileSync('prisma/deploy-defaults.sql','utf8'));await c.end();console.log('Done.')})().catch(e=>{console.error(e);process.exit(1)})\"",
     "db:reset": "prisma migrate reset",
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",
