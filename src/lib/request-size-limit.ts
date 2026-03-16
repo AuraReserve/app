@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const DEFAULT_MAX_SIZE = 5 * 1024 * 1024; // 5MB default
 export const MAX_FILE_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB for file uploads
-export const MAX_JSON_SIZE = 1 * 1024 * 1024; // 1MB for JSON payloads
+export const MAX_JSON_SIZE = 10 * 1024 * 1024; // 10MB for JSON payloads
 
 /**
  * Check if request body exceeds size limit
