@@ -1017,7 +1017,7 @@ export default function OutputDetailClient({
                     {output.lastRunAt && (
                       <div>
                         <span className="text-slate-500">Last Run</span>
-                        <p className="flex items-center gap-1.5">
+                        <span className="flex items-center gap-1.5">
                           <Clock className="w-3 h-3" />
                           {formatDistanceToNow(new Date(output.lastRunAt), {
                             addSuffix: true,
@@ -1027,7 +1027,7 @@ export default function OutputDetailClient({
                               {output.lastRunStatus}
                             </Badge>
                           )}
-                        </p>
+                        </span>
                       </div>
                     )}
                   </div>
