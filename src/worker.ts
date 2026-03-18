@@ -11,13 +11,12 @@ import { processIntegrationRun } from "@/lib/queue/workers/integration.worker";
 import { processNotify, processDeliver } from "@/lib/queue/workers/notification.worker";
 import { syncAllRepeatables } from "@/lib/queue/sync";
 import { registerChannel } from "@/lib/notifications/registry";
-import { inAppChannel } from "@/lib/notifications/channels/in-app";
 import { webhookChannel } from "@/lib/notifications/channels/webhook";
 import { enqueueNotify } from "@/lib/queue/jobs";
 import type { IntegrationRunJobData, NotifyJobData, DeliverJobData } from "@/lib/queue/jobs";
 
-// Register notification channels
-registerChannel(inAppChannel);
+// Register external notification channels
+// (in-app notifications are always created directly by processNotify)
 registerChannel(webhookChannel);
 
 const connection = getRedisConnection();
