@@ -14,6 +14,7 @@ import {
   getDefaultRpcUrl,
   type SupportedBlockchain,
 } from "@/lib/blockchain";
+import type { ArtifactType } from "@prisma/client";
 
 interface BlockchainOutputConfig {
   blockchain?: SupportedBlockchain;
@@ -24,12 +25,48 @@ interface BlockchainOutputConfig {
   valueDecimals?: number;
 }
 
-const AURA_RESERVE_ORACLE_ABI = parseAbi([
-  "function writeValue(uint256 value, string unit)",
-  "function writeMerkle(bytes32 merkleRoot, uint256 totalBalance, uint256 leafCount, string unit)",
+const AGGREGATOR_ORACLE_ABI = parseAbi([
+  "function writeRound(int256 answer)",
 ]);
 
+const MERKLE_ORACLE_ABI = parseAbi([
+  "function writeSnapshot(bytes32 merkleRoot, uint8 treeType, uint256 totalSum, uint256 leafCount, string metadata)",
+]);
+
+/** Maps app ArtifactType to contract TreeType enum value */
+function artifactTypeToTreeType(artifactType: ArtifactType): number {
+  switch (artifactType) {
+    case "MERKLE_TREE":
+      return 0; // Standard
+    case "MERKLE_SUM_TREE":
+      return 1; // SumTree
+    case "SPARSE_MERKLE_TREE":
+      return 2; // SparseMerkle
+    default:
+      return 0;
+  }
+}
+
 const DEFAULT_DECIMALS = 18;
+const GAS_LIMIT_BUFFER_PERCENT = 20n; // 20% buffer on estimated gas
+
+async function estimateGas(
+  client: ReturnType<typeof createPublicClient>,
+  tx: { from: `0x${string}`; to: `0x${string}`; data: `0x${string}` }
+): Promise<{ gas: string; maxFeePerGas: string; maxPriorityFeePerGas: string }> {
+  const [gasEstimate, fees] = await Promise.all([
+    client.estimateGas({ account: tx.from, to: tx.to, data: tx.data }),
+    client.estimateFeesPerGas(),
+  ]);
+
+  const gasWithBuffer = gasEstimate + (gasEstimate * GAS_LIMIT_BUFFER_PERCENT) / 100n;
+
+  return {
+    gas: `0x${gasWithBuffer.toString(16)}`,
+    maxFeePerGas: `0x${(fees.maxFeePerGas ?? 0n).toString(16)}`,
+    maxPriorityFeePerGas: `0x${(fees.maxPriorityFeePerGas ?? 0n).toString(16)}`,
+  };
+}
 
 function normalizeRoot(root: string): `0x${string}` | null {
   const normalized = root.startsWith("0x") ? root : `0x${root}`;
@@ -121,37 +158,53 @@ export class BlockchainOutputHandler extends BaseOutputHandler {
     };
     const publicClient = createPublicClient({ chain, transport: http(config.rpcUrl) });
 
-    const { signTransaction } = await import("@/lib/signer/client");
+    const { signTransaction, getAccounts } = await import("@/lib/signer/client");
 
     try {
+      // Resolve signer address for gas estimation
+      const accounts = await getAccounts();
+      const from = accounts[0] as `0x${string}` | undefined;
+      if (!from) {
+        return this.failure("No signer account available");
+      }
+
       if (config.writeMode === "por_value") {
         const entryValue = context.entry.value;
         if (entryValue === null || entryValue === undefined) {
           return this.failure("Stream entry has no value for PoR write mode");
         }
 
-        const value = parseUnits(entryValue.toString(), config.valueDecimals ?? DEFAULT_DECIMALS);
-        const data = encodeFunctionData({
-          abi: AURA_RESERVE_ORACLE_ABI,
-          functionName: "writeValue",
-          args: [value, context.unit],
+        const decimals = config.valueDecimals ?? DEFAULT_DECIMALS;
+        const answer = parseUnits(entryValue.toString(), decimals);
+        const calldata = encodeFunctionData({
+          abi: AGGREGATOR_ORACLE_ABI,
+          functionName: "writeRound",
+          args: [answer],
         });
+
+        const gasParams = await estimateGas(publicClient, {
+          from,
+          to: config.contractAddress as `0x${string}`,
+          data: calldata,
+        });
+
         const signedTx = await signTransaction({
           to: config.contractAddress,
-          data,
+          data: calldata,
           chainId: `0x${config.chainId.toString(16)}`,
+          ...gasParams,
         });
         const txHash = await publicClient.sendRawTransaction({ serializedTransaction: signedTx as `0x${string}` });
         const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
         return this.success(
           "PoR value written to blockchain",
-          { value: entryValue, unit: context.unit },
+          { value: entryValue, decimals, unit: context.unit },
           { txHash, receipt }
         );
       }
 
-      // merkle_root mode
+      // merkle_root mode → MerkleOracle.writeSnapshot
       const artifactData = context.entry.artifactData;
       if (!artifactData) {
         return this.failure("Stream entry has no artifact data for merkle write mode");
@@ -160,34 +213,54 @@ export class BlockchainOutputHandler extends BaseOutputHandler {
       const merkleRoot = normalizeRoot(String(artifactData.merkleRoot || ""));
       if (!merkleRoot) return this.failure("Invalid merkle root format in entry artifact data");
 
-      const totalBalance = typeof artifactData.totalBalance === "number"
-        ? artifactData.totalBalance
-        : 0;
+      const treeType = artifactTypeToTreeType(context.artifactType);
+
       const leafCount = typeof artifactData.leafCount === "number"
         ? artifactData.leafCount
         : 0;
+      if (leafCount === 0) {
+        return this.failure("Leaf count must be greater than 0");
+      }
 
-      const totalBalanceUnits = parseUnits(
-        totalBalance.toString(),
+      // totalSum must be 0 for Standard and SparseMerkle tree types
+      const isSumTree = treeType === 1;
+      const totalSum = isSumTree && typeof artifactData.totalBalance === "number"
+        ? artifactData.totalBalance
+        : 0;
+
+      const totalSumUnits = parseUnits(
+        totalSum.toString(),
         config.valueDecimals ?? DEFAULT_DECIMALS
       );
 
-      const data = encodeFunctionData({
-        abi: AURA_RESERVE_ORACLE_ABI,
-        functionName: "writeMerkle",
-        args: [merkleRoot, totalBalanceUnits, BigInt(leafCount), context.unit],
+      const metadata = typeof artifactData.metadata === "string"
+        ? artifactData.metadata
+        : JSON.stringify(artifactData.metadata ?? {});
+
+      const calldata = encodeFunctionData({
+        abi: MERKLE_ORACLE_ABI,
+        functionName: "writeSnapshot",
+        args: [merkleRoot, treeType, totalSumUnits, BigInt(leafCount), metadata],
       });
+
+      const gasParams = await estimateGas(publicClient, {
+        from,
+        to: config.contractAddress as `0x${string}`,
+        data: calldata,
+      });
+
       const signedTx = await signTransaction({
         to: config.contractAddress,
-        data,
+        data: calldata,
         chainId: `0x${config.chainId.toString(16)}`,
+        ...gasParams,
       });
       const txHash = await publicClient.sendRawTransaction({ serializedTransaction: signedTx as `0x${string}` });
       const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
       return this.success(
-        "Merkle root written to blockchain",
-        { merkleRoot, totalBalance, leafCount, unit: context.unit },
+        "Merkle snapshot written to blockchain",
+        { merkleRoot, treeType, totalSum, leafCount, metadata },
         { txHash, receipt }
       );
     } catch (error) {

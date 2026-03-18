@@ -36,6 +36,7 @@ export function TwoFactorSetupDialog({
   const [verificationCode, setVerificationCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
+  const [password, setPassword] = useState("");
 
   // Reset state when dialog opens/closes
   useEffect(() => {
@@ -48,6 +49,7 @@ export function TwoFactorSetupDialog({
         setVerificationCode("");
         setBackupCodes([]);
         setCopied(false);
+        setPassword("");
       }, 200);
     }
   }, [open]);
@@ -58,7 +60,7 @@ export function TwoFactorSetupDialog({
 
     try {
       const result = await twoFactor.enable({
-        password: "", // Password will be verified through existing session
+        password,
       });
 
       if (result.error) {
@@ -175,6 +177,18 @@ export function TwoFactorSetupDialog({
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="2fa-password">Confirm Your Password</Label>
+              <Input
+                id="2fa-password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+
             {error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -193,7 +207,7 @@ export function TwoFactorSetupDialog({
               <Button
                 className="flex-1 bg-amber-600 hover:bg-amber-700"
                 onClick={handleStartSetup}
-                disabled={isLoading}
+                disabled={isLoading || !password}
               >
                 {isLoading ? "Setting up..." : "Continue"}
               </Button>
