@@ -201,6 +201,8 @@ model Space {
   groups                  Group[]
   spaceIntegrations       SpaceIntegration[]
   integrationEntitlements IntegrationEntitlement[]
+  notifications          Notification[]
+  notificationChannels   NotificationChannel[]
 
   @@index([createdBy])
   @@index([isActive])
@@ -460,6 +462,8 @@ model SpaceIntegration {
   lastRunAt      DateTime?       @map("last_run_at")
   lastRunStatus  String?         @map("last_run_status")
   metadata       Json            @default("{}")
+  maxAttempts    Int             @default(3) @map("max_attempts")
+  retryBackoff   Int             @default(30) @map("retry_backoff")
   createdDate    DateTime        @default(now()) @map("created_date")
 
   // Relations
@@ -496,6 +500,36 @@ model IntegrationRunLog {
   @@index([spaceIntegrationId])
   @@index([createdDate])
   @@map("integration_run_logs")
+}
+
+model Notification {
+  id              String   @id @default(cuid())
+  spaceId         String   @map("space_id")
+  type            String
+  title           String
+  message         String
+  metadata        Json     @default("{}")
+  read            Boolean  @default(false)
+  createdDate     DateTime @default(now()) @map("created_date")
+
+  space           Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, read])
+  @@map("notifications")
+}
+
+model NotificationChannel {
+  id        String   @id @default(cuid())
+  spaceId   String   @map("space_id")
+  name      String
+  type      String
+  config    Json     @default("{}")
+  enabled   Boolean  @default(true)
+
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId])
+  @@map("notification_channels")
 }
 
 // IntegrationEntitlement model - Paid integration access control per space (replaces PluginEntitlement)
