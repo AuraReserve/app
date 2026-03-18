@@ -32,7 +32,8 @@
     "db:reset": "prisma migrate reset",
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",
-    "clean": "rm -rf .next node_modules"
+    "clean": "rm -rf .next node_modules",
+    "worker": "tsx src/worker.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.2",
