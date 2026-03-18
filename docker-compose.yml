@@ -18,6 +18,23 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis (Job Queue)
+  redis:
+    image: redis:7-alpine
+    container_name: aurareserve-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - aurareserve-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # AuraReserve Application
   app:
     image: aurareserve-app
@@ -29,9 +46,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-aurareserve}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aurareserve}?schema=public
+      REDIS_URL: redis://redis:6379
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
 
@@ -60,10 +80,37 @@ services:
       retries: 3
       start_period: 40s
 
+  # Background Worker (Job Queue)
+  worker:
+    image: aurareserve-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aurareserve-worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aurareserve}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aurareserve}?schema=public
+      REDIS_URL: redis://redis:6379
+      AVALANCHE_SIGNER_PRIVATE_KEY: ${AVALANCHE_SIGNER_PRIVATE_KEY:-}
+      SIGNER_SERVICE_URL: http://app:3000/api/internal/signer/sign
+      SIGNER_SERVICE_TOKEN: ${SIGNER_SERVICE_TOKEN:-}
+      SYSTEM_USER_EMAIL: ${SYSTEM_USER_EMAIL:-system@aurareserve.io}
+    command: ["pnpm", "exec", "tsx", "src/worker.ts"]
+    networks:
+      - aurareserve-network
+
 networks:
   aurareserve-network:
     driver: bridge
 
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
     driver: local

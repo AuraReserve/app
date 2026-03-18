@@ -38,3 +38,49 @@ docker compose up -d
 ```
 
 See `.env.example` for all configuration options.
+
+## Redis for Development
+
+The job queue requires Redis. Options for local development:
+
+### Option 1: Docker (recommended)
+
+Start only Redis from docker-compose:
+
+```bash
+docker compose up redis -d
+```
+
+Redis will be available at `redis://localhost:6379`. Add to your `.env`:
+
+```
+REDIS_URL="redis://localhost:6379"
+```
+
+### Option 2: System install
+
+**macOS:**
+```bash
+brew install redis
+brew services start redis
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install redis-server
+sudo systemctl start redis
+```
+
+**Fedora:**
+```bash
+sudo dnf install redis
+sudo systemctl start redis
+```
+
+### Running the worker locally
+
+In a separate terminal:
+
+```bash
+pnpm worker
+```
