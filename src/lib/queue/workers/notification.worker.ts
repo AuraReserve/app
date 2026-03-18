@@ -9,7 +9,7 @@ export async function processNotify(data: NotifyJobData): Promise<void> {
     where: { id: data.spaceIntegrationId },
     include: {
       space: { select: { id: true, name: true } },
-      integration: { select: { id: true, key: true, name: true } },
+      integration: { select: { id: true, key: true, displayName: true } },
     },
   });
 
@@ -21,7 +21,7 @@ export async function processNotify(data: NotifyJobData): Promise<void> {
     integration: {
       id: si.integration.id,
       key: si.integration.key,
-      name: si.integration.name,
+      name: si.integration.displayName,
     },
     error: data.error,
     attemptsMade: data.attemptsMade,
@@ -33,7 +33,7 @@ export async function processNotify(data: NotifyJobData): Promise<void> {
     data: {
       spaceId: si.space.id,
       type: "integration_failure",
-      title: `Integration failed: ${si.integration.name}`,
+      title: `Integration failed: ${si.integration.displayName}`,
       message: data.error,
       metadata: {
         spaceIntegrationId: data.spaceIntegrationId,

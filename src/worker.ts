@@ -37,7 +37,7 @@ const worker = new Worker(
     }
   },
   {
-    connection,
+    connection: connection as never,
     concurrency: 5,
   }
 );
