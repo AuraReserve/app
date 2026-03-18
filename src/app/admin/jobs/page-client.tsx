@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { RefreshCw, Trash2, RotateCcw, AlertCircle, CheckCircle2 } from "lucide-react";
+import { RefreshCw, Trash2, RotateCcw, AlertCircle, CheckCircle2, ShieldAlert } from "lucide-react";
 import { format } from "date-fns";
 
 interface JobCounts {
@@ -64,6 +64,7 @@ export default function JobsPageClient() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<string | null>(null);
 
   const fetchData = useCallback(async (tab: TabState = activeTab) => {
     try {
@@ -329,6 +330,138 @@ export default function JobsPageClient() {
                 </table>
               </div>
             )}
+          </CardContent>
+        </Card>
+        {/* Danger Zone */}
+        <Card className="border-red-200">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2 text-red-700">
+              <ShieldAlert className="w-5 h-5" />
+              Danger Zone
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {/* Drain Queue */}
+              <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200">
+                <div>
+                  <p className="font-medium text-slate-900">Drain Queue</p>
+                  <p className="text-sm text-slate-500">Remove all waiting and scheduled jobs. Active jobs will finish. Repeatable schedulers are kept.</p>
+                </div>
+                {confirmAction === "drain" ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={actionInFlight === "drain"}
+                      onClick={async () => {
+                        setActionInFlight("drain");
+                        await postAction({ action: "drain" }, "Queue drained — all waiting/scheduled jobs removed");
+                        setActionInFlight(null);
+                        setConfirmAction(null);
+                      }}
+                    >
+                      {actionInFlight === "drain" ? "Draining..." : "Confirm Drain"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:border-red-300" onClick={() => setConfirmAction("drain")}>
+                    Drain
+                  </Button>
+                )}
+              </div>
+
+              {/* Clean All Jobs */}
+              <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200">
+                <div>
+                  <p className="font-medium text-slate-900">Clean All Jobs</p>
+                  <p className="text-sm text-slate-500">Remove all waiting, scheduled, completed, and failed jobs. Repeatable schedulers are kept.</p>
+                </div>
+                {confirmAction === "clean-all" ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={actionInFlight === "clean-all"}
+                      onClick={async () => {
+                        setActionInFlight("clean-all");
+                        await postAction({ action: "clean-all" }, "All jobs cleaned");
+                        setActionInFlight(null);
+                        setConfirmAction(null);
+                      }}
+                    >
+                      {actionInFlight === "clean-all" ? "Cleaning..." : "Confirm Clean All"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:border-red-300" onClick={() => setConfirmAction("clean-all")}>
+                    Clean All
+                  </Button>
+                )}
+              </div>
+
+              {/* Clean Failed */}
+              <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200">
+                <div>
+                  <p className="font-medium text-slate-900">Clean Failed Jobs</p>
+                  <p className="text-sm text-slate-500">Remove all failed jobs and their error history.</p>
+                </div>
+                {confirmAction === "clean-failed" ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={actionInFlight === "clean-failed"}
+                      onClick={async () => {
+                        setActionInFlight("clean-failed");
+                        await postAction({ action: "clean-failed" }, "All failed jobs cleaned");
+                        setActionInFlight(null);
+                        setConfirmAction(null);
+                      }}
+                    >
+                      {actionInFlight === "clean-failed" ? "Cleaning..." : "Confirm"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:border-red-300" onClick={() => setConfirmAction("clean-failed")}>
+                    Clean Failed
+                  </Button>
+                )}
+              </div>
+
+              {/* Obliterate */}
+              <div className="flex items-center justify-between p-4 rounded-lg border border-red-200 bg-red-50">
+                <div>
+                  <p className="font-medium text-red-900">Obliterate Queue</p>
+                  <p className="text-sm text-red-700">Destroy everything — all jobs, history, and repeatable schedulers. Schedulers will be recreated on next worker restart.</p>
+                </div>
+                {confirmAction === "obliterate" ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={actionInFlight === "obliterate"}
+                      onClick={async () => {
+                        setActionInFlight("obliterate");
+                        await postAction({ action: "obliterate" }, "Queue obliterated — restart worker to recreate schedulers");
+                        setActionInFlight(null);
+                        setConfirmAction(null);
+                      }}
+                    >
+                      {actionInFlight === "obliterate" ? "Destroying..." : "Yes, Obliterate"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="destructive" onClick={() => setConfirmAction("obliterate")}>
+                    Obliterate
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

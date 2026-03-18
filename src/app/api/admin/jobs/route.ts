@@ -79,6 +79,26 @@ export async function POST(request: NextRequest) {
       await queue.clean(grace, 1000, "completed");
       return NextResponse.json({ success: true });
     }
+    case "drain": {
+      // Remove all waiting and delayed jobs
+      await queue.drain();
+      return NextResponse.json({ success: true });
+    }
+    case "obliterate": {
+      // Nuclear option: remove everything including schedulers
+      await queue.obliterate({ force: true });
+      return NextResponse.json({ success: true });
+    }
+    case "clean-failed": {
+      await queue.clean(0, 10000, "failed");
+      return NextResponse.json({ success: true });
+    }
+    case "clean-all": {
+      await queue.drain();
+      await queue.clean(0, 10000, "completed");
+      await queue.clean(0, 10000, "failed");
+      return NextResponse.json({ success: true });
+    }
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
