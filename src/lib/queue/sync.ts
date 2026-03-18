@@ -7,6 +7,36 @@ import type { IntegrationStatus, IntegrationTrigger } from "@prisma/client";
 const STATUS_ACTIVE = "ACTIVE" as unknown as IntegrationStatus;
 const TRIGGER_CRON = "CRON" as unknown as IntegrationTrigger;
 
+// ---------------------------------------------------------------------------
+// Shared helper to build the BullMQ job scheduler template
+// ---------------------------------------------------------------------------
+
+function buildSchedulerTemplate(si: {
+  id: string;
+  schedule: string;
+  maxAttempts: number;
+  retryBackoff: number;
+}) {
+  return {
+    key: si.id,
+    repeat: { pattern: si.schedule },
+    template: {
+      name: "integration.run",
+      data: {
+        spaceIntegrationId: si.id,
+        trigger: "cron",
+      } satisfies IntegrationRunJobData,
+      opts: {
+        attempts: si.maxAttempts,
+        backoff: {
+          type: "exponential" as const,
+          delay: si.retryBackoff * 1000,
+        },
+      },
+    },
+  };
+}
+
 /**
  * Sync a single integration's repeatable job in BullMQ.
  * Upserts if trigger=CRON + status=ACTIVE + schedule present.
@@ -43,26 +73,10 @@ export async function syncRepeatableJob(
   }
 
   const queue = getIntegrationQueue();
-  const data: IntegrationRunJobData = {
-    spaceIntegrationId: si.id,
-    trigger: "cron",
-  };
-
-  await queue.upsertJobScheduler(
-    si.id,
-    { pattern: si.schedule! },
-    {
-      name: "integration.run",
-      data,
-      opts: {
-        attempts: si.maxAttempts,
-        backoff: {
-          type: "exponential" as const,
-          delay: si.retryBackoff * 1000,
-        },
-      },
-    }
+  const { key, repeat, template } = buildSchedulerTemplate(
+    si as typeof si & { schedule: string }
   );
+  await queue.upsertJobScheduler(key, repeat, template);
 }
 
 /**
@@ -111,26 +125,10 @@ export async function syncAllRepeatables(): Promise<void> {
 
   // 4. Upsert all DB integrations
   for (const si of dbIntegrations) {
-    const data: IntegrationRunJobData = {
-      spaceIntegrationId: si.id,
-      trigger: "cron",
-    };
-
-    await queue.upsertJobScheduler(
-      si.id,
-      { pattern: si.schedule! },
-      {
-        name: "integration.run",
-        data,
-        opts: {
-          attempts: si.maxAttempts,
-          backoff: {
-            type: "exponential" as const,
-            delay: si.retryBackoff * 1000,
-          },
-        },
-      }
+    const { key, repeat, template } = buildSchedulerTemplate(
+      si as typeof si & { schedule: string }
     );
+    await queue.upsertJobScheduler(key, repeat, template);
   }
 
   const orphanCount = [...existingKeys].filter((k) => !dbIds.has(k)).length;
