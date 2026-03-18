@@ -7,6 +7,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { syncRepeatableJob } from "@/lib/queue/sync";
 import {
   NotFoundError,
   ValidationError,
@@ -122,7 +123,7 @@ export async function createDataInput(params: CreateDataInputParams) {
   }
 
   // 5. Create atomically
-  return prisma.$transaction(async (tx) => {
+  const spaceIntegration = await prisma.$transaction(async (tx) => {
     let streamId = existingStreamId;
 
     if (!streamId) {
@@ -169,6 +170,13 @@ export async function createDataInput(params: CreateDataInputParams) {
 
     return spaceIntegration;
   });
+
+  try {
+    await syncRepeatableJob(spaceIntegration.id);
+  } catch (err) {
+    console.warn("[Queue] Failed to sync repeatable job:", err);
+  }
+  return spaceIntegration;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +254,7 @@ export async function updateDataInput(
         : ("INACTIVE" as unknown as IntegrationStatus);
   }
 
-  return prisma.spaceIntegration.update({
+  const updated = await prisma.spaceIntegration.update({
     where: { id: integrationId },
     data,
     include: {
@@ -260,6 +268,15 @@ export async function updateDataInput(
       accessGroup: true,
     },
   });
+
+  if (params.trigger !== undefined || params.schedule !== undefined || params.status !== undefined) {
+    try {
+      await syncRepeatableJob(integrationId);
+    } catch (err) {
+      console.warn("[Queue] Failed to sync repeatable job:", err);
+    }
+  }
+  return updated;
 }
 
 // ---------------------------------------------------------------------------

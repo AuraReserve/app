@@ -8,6 +8,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { syncRepeatableJob } from "@/lib/queue/sync";
 import {
   NotFoundError,
   ValidationError,
@@ -106,7 +107,7 @@ export async function createDataOutput(params: CreateDataOutputParams) {
   const triggerKey = (trigger ?? "manual").toLowerCase();
   const triggerValue = TRIGGER_MAP[triggerKey] ?? TRIGGER_MAP.manual;
 
-  return prisma.spaceIntegration.create({
+  const spaceIntegration = await prisma.spaceIntegration.create({
     data: {
       spaceId,
       integrationId: integration.id,
@@ -122,6 +123,13 @@ export async function createDataOutput(params: CreateDataOutputParams) {
       stream: true,
     },
   });
+
+  try {
+    await syncRepeatableJob(spaceIntegration.id);
+  } catch (err) {
+    console.warn("[Queue] Failed to sync repeatable job:", err);
+  }
+  return spaceIntegration;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +223,7 @@ export async function updateDataOutput(
         : ("INACTIVE" as unknown as IntegrationStatus);
   }
 
-  return prisma.spaceIntegration.update({
+  const updated = await prisma.spaceIntegration.update({
     where: { id: integrationId },
     data,
     include: {
@@ -224,4 +232,13 @@ export async function updateDataOutput(
       runLogs: { take: 5, orderBy: { createdDate: "desc" } },
     },
   });
+
+  if (params.trigger !== undefined || params.schedule !== undefined || params.status !== undefined) {
+    try {
+      await syncRepeatableJob(integrationId);
+    } catch (err) {
+      console.warn("[Queue] Failed to sync repeatable job:", err);
+    }
+  }
+  return updated;
 }
