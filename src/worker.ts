@@ -27,7 +27,7 @@ const worker = new Worker(
   async (job) => {
     switch (job.name) {
       case "integration.run":
-        return processIntegrationRun(job.data as IntegrationRunJobData);
+        return processIntegrationRun(job.data as IntegrationRunJobData, job.timestamp);
       case "integration.notify":
         return processNotify(job.data as NotifyJobData);
       case "notification.deliver":

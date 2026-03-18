@@ -71,4 +71,56 @@ describe("processIntegrationRun", () => {
       expect((e as Error).constructor.name).toBe("UnrecoverableError");
     }
   });
+
+  it("skips stale cron jobs older than 5 minutes", async () => {
+    mockRunSpaceIntegration.mockResolvedValue({ success: true });
+    const { processIntegrationRun } = await import(
+      "@/lib/queue/workers/integration.worker"
+    );
+
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    await processIntegrationRun(
+      { spaceIntegrationId: "si-1", trigger: "cron" },
+      tenMinutesAgo
+    );
+
+    // Should NOT have called runSpaceIntegration
+    expect(mockRunSpaceIntegration).not.toHaveBeenCalled();
+  });
+
+  it("processes recent cron jobs normally", async () => {
+    mockRunSpaceIntegration.mockResolvedValue({ success: true });
+    const { processIntegrationRun } = await import(
+      "@/lib/queue/workers/integration.worker"
+    );
+
+    const oneMinuteAgo = Date.now() - 60 * 1000;
+    await processIntegrationRun(
+      { spaceIntegrationId: "si-1", trigger: "cron" },
+      oneMinuteAgo
+    );
+
+    expect(mockRunSpaceIntegration).toHaveBeenCalled();
+  });
+
+  it("never skips manual or on_change jobs regardless of age", async () => {
+    mockRunSpaceIntegration.mockResolvedValue({ success: true });
+    const { processIntegrationRun } = await import(
+      "@/lib/queue/workers/integration.worker"
+    );
+
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    await processIntegrationRun(
+      { spaceIntegrationId: "si-1", trigger: "manual" },
+      oneHourAgo
+    );
+    expect(mockRunSpaceIntegration).toHaveBeenCalled();
+
+    mockRunSpaceIntegration.mockClear();
+    await processIntegrationRun(
+      { spaceIntegrationId: "si-1", trigger: "on_change" },
+      oneHourAgo
+    );
+    expect(mockRunSpaceIntegration).toHaveBeenCalled();
+  });
 });
