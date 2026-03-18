@@ -29,6 +29,8 @@ interface StoreInput {
   unit: string;
   artifactType: string;
   sourceConfig: Record<string, unknown>;
+  trigger?: string;
+  schedule?: string;
 }
 
 interface OutputInput {
@@ -199,6 +201,10 @@ export async function POST(request: NextRequest) {
             where: { key: stream.sourceType },
           });
           if (integration) {
+            const inputTrigger = stream.trigger
+              ? (stream.trigger.toUpperCase() as unknown as IntegrationTrigger)
+              : integration.defaultTrigger ?? null;
+
             await tx.spaceIntegration.create({
               data: {
                 spaceId: space.id,
@@ -207,7 +213,8 @@ export async function POST(request: NextRequest) {
                 direction: DIRECTION_INPUT,
                 status: STATUS_ACTIVE,
                 config: (stream.sourceConfig ?? {}) as never,
-                trigger: integration.defaultTrigger ?? null,
+                trigger: inputTrigger,
+                schedule: stream.schedule || integration.defaultSchedule || null,
               },
             });
           }
@@ -271,6 +278,22 @@ export async function POST(request: NextRequest) {
 
       return space;
     });
+
+    // Sync any cron-scheduled input integrations to BullMQ
+    if (streams && streams.length > 0) {
+      try {
+        const { syncRepeatableJob } = await import("@/lib/queue/sync");
+        const cronInputs = await prisma.spaceIntegration.findMany({
+          where: { spaceId: result.id, direction: DIRECTION_INPUT, trigger: "CRON" as unknown as IntegrationTrigger },
+          select: { id: true },
+        });
+        for (const si of cronInputs) {
+          await syncRepeatableJob(si.id);
+        }
+      } catch (err) {
+        console.warn("[Queue] Failed to sync repeatable jobs after space creation:", err);
+      }
+    }
 
     // Return the created space (format to match entity system conventions)
     const [space] = await ServerEntities.Space.filter({ id: result.id });

@@ -72,6 +72,9 @@ const INPUT_SOURCE_OPTIONS = defaultIntegrations
     description: i.description,
     supportedArtifactTypes: i.supportedArtifactTypes.map((t) => t.toLowerCase()),
     isFree: i.isFree,
+    supportedTriggers: i.supportedTriggers.map((t) => t.toLowerCase()),
+    defaultTrigger: i.defaultTrigger?.toLowerCase() ?? null,
+    defaultSchedule: i.defaultSchedule,
   }));
 
 /** Represents one input source + its target data stream, before creation */
@@ -84,6 +87,8 @@ export interface InputConfig {
   unit: string;
   artifactType: string;
   sourceConfig: Record<string, unknown>;
+  trigger: string;
+  schedule: string;
 }
 
 /** Derive output destination options from the shared integration catalog */
@@ -174,6 +179,7 @@ function defaultSourceConfig(sourceType: string): Record<string, unknown> {
 let inputIdCounter = 0;
 function makeInputConfig(sourceType: string = "manual"): InputConfig {
   inputIdCounter += 1;
+  const sourceMeta = INPUT_SOURCE_OPTIONS.find((o) => o.key === sourceType);
   return {
     id: `input-${inputIdCounter}`,
     sourceType,
@@ -183,6 +189,8 @@ function makeInputConfig(sourceType: string = "manual"): InputConfig {
     unit: "",
     artifactType: "value",
     sourceConfig: defaultSourceConfig(sourceType),
+    trigger: sourceMeta?.defaultTrigger ?? "manual",
+    schedule: sourceMeta?.defaultSchedule ?? "",
   };
 }
 
@@ -720,6 +728,8 @@ export default function CreateSpaceDialog({ open, onOpenChange, onSpaceCreated }
           sourceType: newType,
           artifactType,
           sourceConfig: defaultSourceConfig(newType),
+          trigger: sourceMeta?.defaultTrigger ?? "manual",
+          schedule: sourceMeta?.defaultSchedule ?? "",
         };
       })
     );
@@ -946,6 +956,8 @@ export default function CreateSpaceDialog({ open, onOpenChange, onSpaceCreated }
           unit: string;
           artifactType: string;
           sourceConfig: Record<string, unknown>;
+          trigger: string;
+          schedule: string;
         }>;
         outputs?: Array<{
           destType: string;
@@ -975,6 +987,8 @@ export default function CreateSpaceDialog({ open, onOpenChange, onSpaceCreated }
           unit: input.unit,
           artifactType: input.artifactType,
           sourceConfig: input.sourceConfig,
+          trigger: input.trigger,
+          schedule: input.trigger === "cron" ? input.schedule : "",
         }));
       }
 
@@ -1245,6 +1259,41 @@ export default function CreateSpaceDialog({ open, onOpenChange, onSpaceCreated }
                             />
                           </div>
                         </div>
+
+                        {/* Trigger & Schedule — only for sources that support cron */}
+                        {sourceMeta && sourceMeta.supportedTriggers.length > 0 && (
+                          <div className="pt-2 border-t border-slate-200">
+                            <p className="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">
+                              Schedule
+                            </p>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-2">
+                                <Label>Trigger</Label>
+                                <select
+                                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                                  value={input.trigger}
+                                  onChange={(e) => updateInput(input.id, { trigger: e.target.value })}
+                                >
+                                  <option value="manual">Manual</option>
+                                  {sourceMeta.supportedTriggers.includes("cron") && (
+                                    <option value="cron">Scheduled (Cron)</option>
+                                  )}
+                                </select>
+                              </div>
+                              {input.trigger === "cron" && (
+                                <div className="space-y-2">
+                                  <Label>Cron Schedule</Label>
+                                  <Input
+                                    placeholder="e.g. 0 */6 * * *"
+                                    value={input.schedule}
+                                    onChange={(e) => updateInput(input.id, { schedule: e.target.value })}
+                                  />
+                                  <p className="text-xs text-slate-400">5-field cron: min hour day month weekday</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1493,6 +1542,11 @@ export default function CreateSpaceDialog({ open, onOpenChange, onSpaceCreated }
                             <span>
                               Input: {INPUT_SOURCE_OPTIONS.find((o) => o.key === input.sourceType)?.label}
                             </span>
+                            {input.trigger !== "manual" && (
+                              <span>
+                                Trigger: {input.trigger === "cron" ? `Scheduled (${input.schedule})` : input.trigger}
+                              </span>
+                            )}
                             {linkedOutputs.length > 0 && (
                               <span>
                                 Outputs: {linkedOutputs.map((o) =>
