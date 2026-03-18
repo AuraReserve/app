@@ -51,6 +51,7 @@ import {
   IntegrationConfigFieldsWithDirection,
   hasConfigFields,
 } from "@/components/integrations/integration-config-fields";
+import { CronScheduleInput } from "@/components/integrations/cron-schedule-input";
 import type { IntegrationConfig } from "@/components/integrations/integration-config-fields";
 import { FileUploadSection } from "@/components/spaces/file-upload-section";
 import { ReserveDetailDialog } from "@/components/spaces/reserve-detail-dialog";
@@ -1768,18 +1769,11 @@ function ConfigurationTab({
             </div>
 
             {trigger === "cron" && (
-              <div className="space-y-2">
-                <Label className="text-sm">Schedule (cron expression)</Label>
-                <Input
-                  value={schedule}
-                  onChange={(e) => setSchedule(e.target.value)}
-                  placeholder="0 */6 * * *"
-                  className="font-mono text-sm"
-                />
-                <p className="text-xs text-slate-500">
-                  Examples: <code>0 */6 * * *</code> (every 6h), <code>0 0 * * *</code> (daily), <code>*/30 * * * *</code> (every 30min)
-                </p>
-              </div>
+              <CronScheduleInput
+                value={schedule}
+                onChange={setSchedule}
+                label="Schedule"
+              />
             )}
 
             {triggerChanged && (

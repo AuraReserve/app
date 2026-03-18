@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["bullmq", "ioredis"],
   experimental: {
     // Optimize barrel file imports for faster builds and smaller bundles
     // See: https://vercel.com/blog/how-we-optimized-package-imports-in-next-js

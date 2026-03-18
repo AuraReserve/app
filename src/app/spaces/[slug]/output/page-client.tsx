@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -48,6 +47,7 @@ import {
   IntegrationConfigFieldsWithDirection,
   hasConfigFields,
 } from "@/components/integrations/integration-config-fields";
+import { CronScheduleInput } from "@/components/integrations/cron-schedule-input";
 import type { IntegrationConfig } from "@/components/integrations/integration-config-fields";
 import {
   Upload,
@@ -554,14 +554,11 @@ function AddDataOutputDialog({
             )}
 
             {trigger === "cron" && (
-              <div className="space-y-2">
-                <Label>Schedule (cron expression)</Label>
-                <Input
-                  value={schedule}
-                  onChange={(e) => setSchedule(e.target.value)}
-                  placeholder="0 */6 * * *"
-                />
-              </div>
+              <CronScheduleInput
+                value={schedule}
+                onChange={setSchedule}
+                label="Schedule"
+              />
             )}
 
             {/* Integration-specific config fields */}
@@ -747,14 +744,11 @@ function EditDataOutputDialog({
           )}
 
           {trigger === "cron" && (
-            <div className="space-y-2">
-              <Label>Schedule (cron expression)</Label>
-              <Input
-                value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
-                placeholder="0 */6 * * *"
-              />
-            </div>
+            <CronScheduleInput
+              value={schedule}
+              onChange={setSchedule}
+              label="Schedule"
+            />
           )}
 
           {/* Integration-specific config */}

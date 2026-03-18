@@ -24,6 +24,7 @@ import {
   type SupportedBlockchain,
 } from "@/lib/blockchain";
 import { defaultIntegrations } from "@/lib/integrations/default-integrations";
+import { CronScheduleInput } from "@/components/integrations/cron-schedule-input";
 
 
 // ---------------------------------------------------------------------------
@@ -1281,15 +1282,11 @@ export default function CreateSpaceDialog({ open, onOpenChange, onSpaceCreated }
                                 </select>
                               </div>
                               {input.trigger === "cron" && (
-                                <div className="space-y-2">
-                                  <Label>Cron Schedule</Label>
-                                  <Input
-                                    placeholder="e.g. 0 */6 * * *"
-                                    value={input.schedule}
-                                    onChange={(e) => updateInput(input.id, { schedule: e.target.value })}
-                                  />
-                                  <p className="text-xs text-slate-400">5-field cron: min hour day month weekday</p>
-                                </div>
+                                <CronScheduleInput
+                                  value={input.schedule}
+                                  onChange={(v) => updateInput(input.id, { schedule: v })}
+                                  label="Schedule"
+                                />
                               )}
                             </div>
                           </div>
@@ -1444,14 +1441,11 @@ export default function CreateSpaceDialog({ open, onOpenChange, onSpaceCreated }
                               </select>
                             </div>
                             {output.trigger === "cron" && (
-                              <div className="space-y-2">
-                                <Label>Cron Schedule *</Label>
-                                <Input
-                                  placeholder="0 */6 * * *"
-                                  value={output.schedule}
-                                  onChange={(e) => updateOutput(output.id, { schedule: e.target.value })}
-                                />
-                              </div>
+                              <CronScheduleInput
+                                value={output.schedule}
+                                onChange={(v) => updateOutput(output.id, { schedule: v })}
+                                label="Schedule"
+                              />
                             )}
                           </div>
                         )}

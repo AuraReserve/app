@@ -67,6 +67,7 @@ function createDefaultRegistry(): IntegrationRegistry {
   // Input handlers: key matches Integration.key in the database
   reg.registerInput("manual", manualInputHandler);
   reg.registerInput("api", apiInputHandler);
+  reg.registerInput("api-fetch", apiInputHandler);
   // Blockchain input handler — registered under all possible keys
   reg.registerInput("blockchain-read", blockchainInputHandler);
   reg.registerInput("avalanche", blockchainInputHandler);

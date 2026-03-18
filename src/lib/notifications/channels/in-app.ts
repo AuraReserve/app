@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { NotificationChannel, NotificationPayload } from "../registry";
+import type { NotificationChannel } from "../registry";
 
 export const inAppChannel: NotificationChannel = {
   type: "in-app",

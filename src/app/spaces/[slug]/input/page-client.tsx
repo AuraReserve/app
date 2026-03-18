@@ -55,6 +55,7 @@ import {
   hasConfigFields,
 } from "@/components/integrations/integration-config-fields";
 import type { IntegrationConfig } from "@/components/integrations/integration-config-fields";
+import { CronScheduleInput } from "@/components/integrations/cron-schedule-input";
 import {
   Plus,
   Database,
@@ -756,14 +757,11 @@ function AddDataInputDialog({
             )}
 
             {trigger === "cron" && (
-              <div className="space-y-2">
-                <Label>Schedule (cron expression)</Label>
-                <Input
-                  value={schedule}
-                  onChange={(e) => setSchedule(e.target.value)}
-                  placeholder="0 */6 * * *"
-                />
-              </div>
+              <CronScheduleInput
+                value={schedule}
+                onChange={setSchedule}
+                label="Schedule"
+              />
             )}
 
             {/* Integration-specific config fields */}

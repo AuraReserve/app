@@ -33,7 +33,8 @@ function createBasePrismaClient() {
 function createPrismaClient() {
   const client = new PrismaClient({
     adapter: getAdapter(),
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+//    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   });
 
   // Extend Prisma client with computed fields that match our application types
