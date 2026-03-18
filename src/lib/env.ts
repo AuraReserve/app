@@ -58,6 +58,13 @@ const envSchema = z.object({
   // System user for automated operations
   SYSTEM_USER_EMAIL: z.string().email().optional(),
 
+  // Redis (required for job queue)
+  REDIS_URL: z.string().url().optional(),
+
+  // Signer service
+  SIGNER_SERVICE_URL: z.string().url().optional(),
+  SIGNER_SERVICE_TOKEN: z.string().min(16, 'SIGNER_SERVICE_TOKEN must be at least 16 characters').optional(),
+
   // Plugin billing/entitlement flags
   SELF_HOSTED: z
     .string()
