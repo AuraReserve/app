@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useSpacePermissions } from "@/hooks/useSpacePermissions";
+import { ExternalLink, Copy, Check } from "lucide-react";
 import { useSpace } from "@/hooks/useSpace";
 import { SpacePageSkeleton, SpaceNotFound, AccessRestricted } from "@/components/spaces/space-page-shell";
 import { AlertMessages } from "@/components/common/alert-messages";
@@ -511,12 +512,7 @@ export default function SpaceSettingsPage({ slug }: SpaceSettingsPageProps) {
               />
             </div>
             {verificationPublic && space?.slug && (
-              <div className="text-sm text-slate-500 bg-slate-50 rounded-md p-3">
-                <span className="text-slate-400">Verification URL:</span>
-                <div className="font-mono text-xs mt-1 text-slate-700">
-                  /verify/{space.slug}/&lt;stream-slug&gt;
-                </div>
-              </div>
+              <VerificationUrls spaceId={space.id} spaceSlug={space.slug} />
             )}
           </CardContent>
         </Card>
@@ -636,6 +632,96 @@ export default function SpaceSettingsPage({ slug }: SpaceSettingsPageProps) {
         </Dialog>
 
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Verification URLs Component
+// ---------------------------------------------------------------------------
+
+const MERKLE_TYPES = new Set(["merkle_tree", "merkle_sum_tree", "sparse_merkle_tree"]);
+
+function VerificationUrls({ spaceId, spaceSlug }: { spaceId: string; spaceSlug: string }) {
+  const [streams, setStreams] = useState<Array<{ name: string; slug: string; artifactType: string }>>([]);
+  const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/spaces/${spaceId}/data-inputs`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((inputs: Array<{ stream?: { name: string; slug: string; artifactType: string } }>) => {
+        const seen = new Set<string>();
+        const merkleStreams: Array<{ name: string; slug: string; artifactType: string }> = [];
+        for (const input of inputs) {
+          if (input.stream && MERKLE_TYPES.has(input.stream.artifactType.toLowerCase()) && !seen.has(input.stream.slug)) {
+            seen.add(input.stream.slug);
+            merkleStreams.push(input.stream);
+          }
+        }
+        setStreams(merkleStreams);
+      })
+      .catch(() => {});
+  }, [spaceId]);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  const handleCopy = (slug: string) => {
+    navigator.clipboard.writeText(`${origin}/verify/${spaceSlug}/${slug}`);
+    setCopiedSlug(slug);
+    setTimeout(() => setCopiedSlug(null), 2000);
+  };
+
+  if (streams.length === 0) {
+    return (
+      <div className="text-sm text-slate-500 bg-slate-50 rounded-md p-3">
+        <span className="text-slate-400">No merkle-type streams configured yet.</span>
+        <p className="text-xs text-slate-400 mt-1">
+          Verification pages are available for streams using Merkle Tree, Merkle Sum Tree, or Sparse Merkle Tree artifact types.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-slate-400">Verification URLs for merkle-type streams:</p>
+      {streams.map((stream) => {
+        const url = `/verify/${spaceSlug}/${stream.slug}`;
+        return (
+          <div
+            key={stream.slug}
+            className="flex items-center justify-between bg-slate-50 rounded-md p-3 border border-slate-100"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-700">{stream.name}</p>
+              <p className="font-mono text-xs text-slate-500 truncate">{url}</p>
+            </div>
+            <div className="flex items-center gap-1 ml-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => handleCopy(stream.slug)}
+                title="Copy URL"
+              >
+                {copiedSlug === stream.slug ? (
+                  <Check className="w-3.5 h-3.5 text-green-600" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5 text-slate-400" />
+                )}
+              </Button>
+              <Link
+                href={url}
+                target="_blank"
+                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-slate-100"
+                title="Open verification page"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+              </Link>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
