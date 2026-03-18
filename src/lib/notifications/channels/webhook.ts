@@ -1,4 +1,4 @@
-import type { NotificationChannel, NotificationPayload } from "../registry";
+import type { NotificationChannel } from "../registry";
 
 export const webhookChannel: NotificationChannel = {
   type: "webhook",
