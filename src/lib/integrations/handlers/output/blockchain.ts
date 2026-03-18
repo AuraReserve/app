@@ -7,13 +7,11 @@
 
 import { BaseOutputHandler } from "../../base-handler";
 import type { ExecutionResult, StoreEntryContext, ValidationResult } from "../../types";
-import { createPublicClient, createWalletClient, http, parseAbi, parseUnits } from "viem";
+import { createPublicClient, encodeFunctionData, http, parseAbi, parseUnits } from "viem";
 import { avalanche, mainnet } from "viem/chains";
-import { privateKeyToAccount } from "viem/accounts";
 import {
   getDefaultChainId,
   getDefaultRpcUrl,
-  getSignerEnvVars,
   type SupportedBlockchain,
 } from "@/lib/blockchain";
 
@@ -23,7 +21,6 @@ interface BlockchainOutputConfig {
   chainId: number;
   contractAddress: string;
   writeMode: "merkle_root" | "por_value";
-  signerPrivateKey?: string;
   valueDecimals?: number;
 }
 
@@ -33,10 +30,6 @@ const AURA_RESERVE_ORACLE_ABI = parseAbi([
 ]);
 
 const DEFAULT_DECIMALS = 18;
-
-function normalizePrivateKey(key: string): `0x${string}` {
-  return key.startsWith("0x") ? (key as `0x${string}`) : (`0x${key}` as `0x${string}`);
-}
 
 function normalizeRoot(root: string): `0x${string}` | null {
   const normalized = root.startsWith("0x") ? root : `0x${root}`;
@@ -66,10 +59,6 @@ function normalizeConfig(config: Record<string, unknown>): BlockchainOutputConfi
     chainId,
     contractAddress: String(config.contractAddress ?? ""),
     writeMode: config.writeMode === "merkle_root" ? "merkle_root" : "por_value",
-    signerPrivateKey:
-      typeof config.signerPrivateKey === "string" && config.signerPrivateKey.trim().length > 0
-        ? config.signerPrivateKey
-        : undefined,
     valueDecimals:
       typeof config.valueDecimals === "number" && Number.isFinite(config.valueDecimals)
         ? config.valueDecimals
@@ -121,16 +110,6 @@ export class BlockchainOutputHandler extends BaseOutputHandler {
       );
     }
 
-    const signerKey =
-      config.signerPrivateKey ||
-      getSignerEnvVars(config.blockchain ?? "").map((envVar) => process.env[envVar]).find(Boolean) ||
-      "";
-    if (!signerKey) {
-      return this.failure(
-        "No signer private key configured. Set signerPrivateKey or a blockchain signer env var."
-      );
-    }
-
     const chainBase = config.blockchain === "ethereum" ? mainnet : avalanche;
     const chain = {
       ...chainBase,
@@ -140,9 +119,9 @@ export class BlockchainOutputHandler extends BaseOutputHandler {
         default: { ...chainBase.rpcUrls.default, http: [config.rpcUrl] },
       },
     };
-    const account = privateKeyToAccount(normalizePrivateKey(signerKey));
-    const walletClient = createWalletClient({ chain, account, transport: http(config.rpcUrl) });
     const publicClient = createPublicClient({ chain, transport: http(config.rpcUrl) });
+
+    const { signTransaction } = await import("@/lib/signer/client");
 
     try {
       if (config.writeMode === "por_value") {
@@ -152,12 +131,17 @@ export class BlockchainOutputHandler extends BaseOutputHandler {
         }
 
         const value = parseUnits(entryValue.toString(), config.valueDecimals ?? DEFAULT_DECIMALS);
-        const txHash = await walletClient.writeContract({
-          address: config.contractAddress as `0x${string}`,
+        const data = encodeFunctionData({
           abi: AURA_RESERVE_ORACLE_ABI,
           functionName: "writeValue",
           args: [value, context.unit],
         });
+        const signedTx = await signTransaction({
+          to: config.contractAddress,
+          data,
+          chainId: `0x${config.chainId.toString(16)}`,
+        });
+        const txHash = await publicClient.sendRawTransaction({ serializedTransaction: signedTx as `0x${string}` });
         const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
         return this.success(
@@ -188,12 +172,17 @@ export class BlockchainOutputHandler extends BaseOutputHandler {
         config.valueDecimals ?? DEFAULT_DECIMALS
       );
 
-      const txHash = await walletClient.writeContract({
-        address: config.contractAddress as `0x${string}`,
+      const data = encodeFunctionData({
         abi: AURA_RESERVE_ORACLE_ABI,
         functionName: "writeMerkle",
         args: [merkleRoot, totalBalanceUnits, BigInt(leafCount), context.unit],
       });
+      const signedTx = await signTransaction({
+        to: config.contractAddress,
+        data,
+        chainId: `0x${config.chainId.toString(16)}`,
+      });
+      const txHash = await publicClient.sendRawTransaction({ serializedTransaction: signedTx as `0x${string}` });
       const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
       return this.success(
