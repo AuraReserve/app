@@ -5,6 +5,7 @@
  * Run via: pnpm exec tsx src/worker.ts
  */
 
+import "dotenv/config";
 import { Worker } from "bullmq";
 import { getRedisConnection, closeRedisConnection } from "@/lib/queue/connection";
 import { processIntegrationRun } from "@/lib/queue/workers/integration.worker";
