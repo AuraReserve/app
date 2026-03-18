@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { RefreshCw, Trash2, RotateCcw, AlertCircle, CheckCircle2, ShieldAlert } from "lucide-react";
+import { RefreshCw, Trash2, RotateCcw, AlertCircle, CheckCircle2, ShieldAlert, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
+import Link from "next/link";
 
 interface JobCounts {
   active: number;
@@ -20,7 +21,7 @@ interface JobCounts {
 interface Job {
   id: string;
   name: string;
-  data: unknown;
+  data: { spaceIntegrationId?: string; [key: string]: unknown };
   attemptsMade: number;
   failedReason?: string;
   processedOn?: number;
@@ -34,10 +35,19 @@ interface Scheduler {
   next?: number;
 }
 
+interface IntegrationInfo {
+  label: string;
+  spaceName: string;
+  spaceSlug: string;
+  direction: string;
+  href: string;
+}
+
 interface JobsData {
   counts: JobCounts;
   jobs: Job[];
   schedulers: Scheduler[];
+  integrations: Record<string, IntegrationInfo>;
 }
 
 type TabState = "failed" | "active" | "delayed" | "completed";
@@ -56,6 +66,20 @@ const COUNT_CARDS: Array<{ key: keyof JobCounts; label: string; color: string }>
   { key: "failed", label: "Failed", color: "text-red-600" },
   { key: "delayed", label: "Scheduled", color: "text-purple-600" },
 ];
+
+function IntegrationLabel({ id, integrations }: { id: string; integrations?: Record<string, IntegrationInfo> }) {
+  const info = integrations?.[id];
+  if (!info) {
+    return <span className="font-mono text-xs text-slate-500">{id}</span>;
+  }
+  return (
+    <Link href={info.href} className="group inline-flex items-center gap-1.5 hover:underline">
+      <span className="text-slate-800 font-medium">{info.label}</span>
+      <span className="text-slate-400 text-xs">({info.spaceName})</span>
+      <ExternalLink className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+    </Link>
+  );
+}
 
 export default function JobsPageClient() {
   const [data, setData] = useState<JobsData | null>(null);
@@ -209,7 +233,7 @@ export default function JobsPageClient() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200">
-                      <th className="text-left py-2 pr-4 font-medium text-slate-600">Key</th>
+                      <th className="text-left py-2 pr-4 font-medium text-slate-600">Integration</th>
                       <th className="text-left py-2 pr-4 font-medium text-slate-600">Pattern</th>
                       <th className="text-left py-2 font-medium text-slate-600">Next Run</th>
                     </tr>
@@ -217,8 +241,10 @@ export default function JobsPageClient() {
                   <tbody>
                     {data.schedulers.map((s) => (
                       <tr key={s.key} className="border-b border-slate-100 last:border-0">
-                        <td className="py-2 pr-4 font-mono text-xs text-slate-700">{s.key}</td>
-                        <td className="py-2 pr-4 text-slate-600">{s.pattern ?? "—"}</td>
+                        <td className="py-2 pr-4">
+                          <IntegrationLabel id={s.key} integrations={data.integrations} />
+                        </td>
+                        <td className="py-2 pr-4 font-mono text-sm text-slate-600">{s.pattern ?? "—"}</td>
                         <td className="py-2 text-slate-600">{formatTs(s.next)}</td>
                       </tr>
                     ))}
@@ -273,8 +299,8 @@ export default function JobsPageClient() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200">
-                      <th className="text-left py-2 pr-4 font-medium text-slate-600">ID</th>
-                      <th className="text-left py-2 pr-4 font-medium text-slate-600">Name</th>
+                      <th className="text-left py-2 pr-4 font-medium text-slate-600">Integration</th>
+                      <th className="text-left py-2 pr-4 font-medium text-slate-600">Type</th>
                       <th className="text-left py-2 pr-4 font-medium text-slate-600">Attempts</th>
                       <th className="text-left py-2 pr-4 font-medium text-slate-600">Created</th>
                       <th className="text-left py-2 pr-4 font-medium text-slate-600">Processed</th>
@@ -289,8 +315,16 @@ export default function JobsPageClient() {
                   <tbody>
                     {data.jobs.map((job) => (
                       <tr key={job.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                        <td className="py-2 pr-4 font-mono text-xs text-slate-500">{job.id}</td>
-                        <td className="py-2 pr-4 font-medium text-slate-800">{job.name}</td>
+                        <td className="py-2 pr-4">
+                          {job.data?.spaceIntegrationId ? (
+                            <IntegrationLabel id={job.data.spaceIntegrationId} integrations={data.integrations} />
+                          ) : (
+                            <span className="font-mono text-xs text-slate-500">{job.id}</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <Badge variant="outline" className="text-xs font-normal">{job.name.replace("integration.", "")}</Badge>
+                        </td>
                         <td className="py-2 pr-4 text-slate-600">{job.attemptsMade}</td>
                         <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">{formatTs(job.timestamp)}</td>
                         <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">{formatTs(job.processedOn)}</td>

@@ -1,6 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-utils";
 import { getIntegrationQueue } from "@/lib/queue/queues";
+import { prisma } from "@/lib/prisma";
+import type { IntegrationDirection } from "@prisma/client";
+
+const DIRECTION_INPUT = "INPUT" as unknown as IntegrationDirection;
+
+/**
+ * Resolve spaceIntegrationIds to display info (name, space, direction, link).
+ * Batches a single DB query for all IDs.
+ */
+async function resolveIntegrations(ids: string[]): Promise<
+  Record<string, { label: string; spaceName: string; spaceSlug: string; direction: string; href: string }>
+> {
+  if (ids.length === 0) return {};
+
+  const integrations = await prisma.spaceIntegration.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      direction: true,
+      integration: { select: { displayName: true, key: true } },
+      space: { select: { name: true, slug: true } },
+      stream: { select: { name: true } },
+    },
+  });
+
+  const map: Record<string, { label: string; spaceName: string; spaceSlug: string; direction: string; href: string }> = {};
+  for (const si of integrations) {
+    const dir = si.direction === DIRECTION_INPUT ? "input" : "output";
+    map[si.id] = {
+      label: si.stream?.name
+        ? `${si.integration.displayName} — ${si.stream.name}`
+        : si.integration.displayName,
+      spaceName: si.space.name,
+      spaceSlug: si.space.slug,
+      direction: dir,
+      href: `/spaces/${si.space.slug}/${dir}/${si.id}`,
+    };
+  }
+  return map;
+}
 
 export async function GET(request: NextRequest) {
   await requireRole("owner");
@@ -28,8 +68,20 @@ export async function GET(request: NextRequest) {
 
   const schedulers = await queue.getJobSchedulers();
 
+  // Collect all spaceIntegrationIds from jobs and schedulers
+  const siIds = new Set<string>();
+  for (const j of jobs as Array<{ data?: { spaceIntegrationId?: string } }>) {
+    if (j.data?.spaceIntegrationId) siIds.add(j.data.spaceIntegrationId);
+  }
+  for (const s of schedulers) {
+    if (typeof s.key === "string") siIds.add(s.key);
+  }
+
+  const integrationMap = await resolveIntegrations([...siIds]);
+
   return NextResponse.json({
     counts,
+    integrations: integrationMap,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     jobs: jobs.map((j: any) => ({
       id: j.id,
