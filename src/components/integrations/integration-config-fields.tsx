@@ -296,6 +296,7 @@ function BlockchainOutputConfigFields({
   readOnly,
 }: Omit<ConfigFieldsProps, "integrationKey">) {
   const blockchain = String(config.blockchain || "avalanche");
+  const isTestnet = !!config.isTestnet;
   const rpcUrl = String(config.rpcUrl || "");
   const chainId = typeof config.chainId === "number" ? config.chainId : "";
   const contractAddress = String(config.contractAddress || "");
@@ -303,7 +304,34 @@ function BlockchainOutputConfigFields({
   const valueDecimals = typeof config.valueDecimals === "number" ? config.valueDecimals : 18;
   const signerPrivateKey = String(config.signerPrivateKey || "");
 
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const set = (key: string, value: unknown) => onChange({ ...config, [key]: value });
+
+  const setMultiple = (updates: Record<string, unknown>) => onChange({ ...config, ...updates });
+
+  const handleNetworkChange = (testnet: boolean) => {
+    const network = testnet ? AVALANCHE_TESTNET : AVALANCHE_MAINNET;
+    setMultiple({
+      isTestnet: testnet,
+      rpcUrl: network.rpcUrl,
+      chainId: network.chainId,
+      blockchain: "avalanche",
+    });
+  };
+
+  // Initialize defaults on first render if not set
+  useEffect(() => {
+    if (readOnly) return;
+    const updates: Record<string, unknown> = {};
+    if (!config.blockchain) updates.blockchain = "avalanche";
+    if (!config.rpcUrl) updates.rpcUrl = isTestnet ? AVALANCHE_TESTNET.rpcUrl : AVALANCHE_MAINNET.rpcUrl;
+    if (config.chainId === undefined) updates.chainId = isTestnet ? AVALANCHE_TESTNET.chainId : AVALANCHE_MAINNET.chainId;
+    if (Object.keys(updates).length > 0) {
+      onChange({ ...config, ...updates });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -341,38 +369,6 @@ function BlockchainOutputConfigFields({
         </Field>
       </div>
 
-      <Field label="RPC URL" required hint="JSON-RPC endpoint for the blockchain">
-        <Input
-          value={rpcUrl}
-          onChange={(e) => set("rpcUrl", e.target.value)}
-          placeholder="https://api.avax.network/ext/bc/C/rpc"
-          readOnly={readOnly}
-        />
-      </Field>
-
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Chain ID">
-          <Input
-            type="number"
-            value={chainId}
-            onChange={(e) => set("chainId", parseInt(e.target.value) || 0)}
-            placeholder="43114"
-            readOnly={readOnly}
-          />
-        </Field>
-
-        <Field label="Value Decimals" hint="Token decimals (0-36)">
-          <Input
-            type="number"
-            value={valueDecimals}
-            onChange={(e) => set("valueDecimals", parseInt(e.target.value) || 18)}
-            min={0}
-            max={36}
-            readOnly={readOnly}
-          />
-        </Field>
-      </div>
-
       <Field label="Contract Address" required hint="0x-prefixed smart contract address">
         <Input
           value={contractAddress}
@@ -394,6 +390,66 @@ function BlockchainOutputConfigFields({
           readOnly={readOnly}
         />
       </Field>
+
+      {/* Advanced Options Toggle */}
+      <button
+        type="button"
+        onClick={() => setShowAdvanced(!showAdvanced)}
+        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+      >
+        {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        Advanced Options
+      </button>
+
+      {showAdvanced && (
+        <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          {/* Testnet toggle */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium">Use Testnet</Label>
+              <p className="text-xs text-slate-500">
+                Switch to Avalanche Fuji testnet for testing
+              </p>
+            </div>
+            <Switch
+              checked={isTestnet}
+              onCheckedChange={handleNetworkChange}
+              disabled={readOnly}
+            />
+          </div>
+
+          <Field label="RPC URL" hint="Custom JSON-RPC endpoint (auto-configured by default)">
+            <Input
+              value={rpcUrl}
+              onChange={(e) => set("rpcUrl", e.target.value)}
+              placeholder={isTestnet ? AVALANCHE_TESTNET.rpcUrl : AVALANCHE_MAINNET.rpcUrl}
+              readOnly={readOnly}
+              className="font-mono text-sm"
+            />
+          </Field>
+
+          <Field label="Chain ID" hint="Override the chain ID if using a custom network">
+            <Input
+              type="number"
+              value={chainId}
+              onChange={(e) => set("chainId", parseInt(e.target.value) || 0)}
+              placeholder={String(isTestnet ? AVALANCHE_TESTNET.chainId : AVALANCHE_MAINNET.chainId)}
+              readOnly={readOnly}
+            />
+          </Field>
+
+          <Field label="Value Decimals" hint="Token decimals for value encoding (0-36)">
+            <Input
+              type="number"
+              value={valueDecimals}
+              onChange={(e) => set("valueDecimals", parseInt(e.target.value) || 18)}
+              min={0}
+              max={36}
+              readOnly={readOnly}
+            />
+          </Field>
+        </div>
+      )}
     </div>
   );
 }
