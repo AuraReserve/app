@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useSession } from "@/lib/auth-client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Settings, Package, Users } from "lucide-react";
+import { Settings, Package, Users, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isOwner as checkIsOwner } from "@/lib/permissions";
 
@@ -23,6 +23,11 @@ const adminNavItems = [
     title: "Users",
     href: "/admin/users",
     icon: Users,
+  },
+  {
+    title: "Jobs",
+    href: "/admin/jobs",
+    icon: ListTodo,
   },
 ];
 
