@@ -73,7 +73,7 @@ export async function createEntry(streamId: string, data: CreateEntryInput) {
     );
   }
 
-  return prisma.streamEntry.create({
+  const entry = await prisma.streamEntry.create({
     data: {
       streamId,
       artifactType: requestedPrismaArtifactType,
@@ -90,6 +90,24 @@ export async function createEntry(streamId: string, data: CreateEntryInput) {
       metadata: data.metadata ?? {},
     },
   });
+
+  // Trigger on-change outputs (fire and forget)
+  try {
+    const { runOnChangeOutputs } = await import("@/lib/integrations/runner");
+    const stream = await prisma.dataStream.findUnique({
+      where: { id: streamId },
+      select: { spaceId: true },
+    });
+    if (stream) {
+      runOnChangeOutputs(stream.spaceId, streamId).catch((err) =>
+        console.warn("[OnChange] Failed to enqueue outputs:", err)
+      );
+    }
+  } catch (err) {
+    console.warn("[OnChange] Failed to trigger on-change outputs:", err);
+  }
+
+  return entry;
 }
 
 /**

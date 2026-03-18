@@ -237,13 +237,16 @@ export async function runSpaceIntegration(
 // ---------------------------------------------------------------------------
 
 /**
- * Trigger all on_change output destinations linked to a specific stream.
+ * Enqueue jobs for all on_change output destinations linked to a stream.
  * Called after a new entry is created in the stream.
  */
 export async function runOnChangeOutputs(
   spaceId: string,
   streamId: string
-): Promise<Array<{ id: string; success: boolean; message?: string }>> {
+): Promise<void> {
+  // Lazy import to avoid circular dependency at module level
+  const { enqueueIntegrationRun } = await import("@/lib/queue/jobs");
+
   const outputs = await prisma.spaceIntegration.findMany({
     where: {
       spaceId,
@@ -252,176 +255,13 @@ export async function runOnChangeOutputs(
       trigger: "ON_CHANGE" as unknown as import("@prisma/client").IntegrationTrigger,
       status: STATUS_ACTIVE,
     },
-    select: { id: true },
+    select: { id: true, maxAttempts: true, retryBackoff: true },
   });
-
-  const results: Array<{ id: string; success: boolean; message?: string }> = [];
 
   for (const output of outputs) {
-    try {
-      const result = await runSpaceIntegration(output.id);
-      results.push({ id: output.id, ...result });
-    } catch (error) {
-      results.push({
-        id: output.id,
-        success: false,
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
+    await enqueueIntegrationRun(output.id, "on_change", undefined, {
+      maxAttempts: output.maxAttempts,
+      retryBackoff: output.retryBackoff,
+    });
   }
-
-  return results;
-}
-
-// ---------------------------------------------------------------------------
-// Cron Scheduling
-// ---------------------------------------------------------------------------
-
-function parseCronField(field: string, min: number, max: number): Set<number> {
-  const out = new Set<number>();
-
-  const addRange = (start: number, end: number, step = 1) => {
-    for (let i = start; i <= end; i += step) {
-      if (i >= min && i <= max) out.add(i);
-    }
-  };
-
-  for (const part of field.split(",")) {
-    if (part === "*") {
-      addRange(min, max);
-      continue;
-    }
-
-    const [base, stepRaw] = part.split("/");
-    const step = stepRaw ? Number(stepRaw) : 1;
-    if (!Number.isFinite(step) || step <= 0) continue;
-
-    if (base === "*") {
-      addRange(min, max, step);
-      continue;
-    }
-
-    if (base.includes("-")) {
-      const [startRaw, endRaw] = base.split("-");
-      const start = Number(startRaw);
-      const end = Number(endRaw);
-      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-      addRange(start, end, step);
-      continue;
-    }
-
-    const value = Number(base);
-    if (Number.isFinite(value) && value >= min && value <= max) {
-      out.add(value);
-    }
-  }
-
-  return out;
-}
-
-function cronMatches(date: Date, expression: string): boolean {
-  const parts = expression.trim().split(/\s+/);
-  if (parts.length !== 5) return false;
-
-  const [minuteExpr, hourExpr, dayExpr, monthExpr, weekdayExpr] = parts;
-
-  const minutes = parseCronField(minuteExpr, 0, 59);
-  const hours = parseCronField(hourExpr, 0, 23);
-  const days = parseCronField(dayExpr, 1, 31);
-  const months = parseCronField(monthExpr, 1, 12);
-  const weekdays = parseCronField(weekdayExpr, 0, 7);
-
-  const dayOfWeek = date.getDay();
-  const normalizedWeekdays = new Set(
-    Array.from(weekdays).map((v) => (v === 7 ? 0 : v))
-  );
-
-  return (
-    minutes.has(date.getMinutes()) &&
-    hours.has(date.getHours()) &&
-    days.has(date.getDate()) &&
-    months.has(date.getMonth() + 1) &&
-    normalizedWeekdays.has(dayOfWeek)
-  );
-}
-
-/**
- * Check if a cron schedule is due to run.
- * Walks minute-by-minute from lastRun (or 7 days ago) to now.
- */
-export function isCronDue(
-  schedule: string | null,
-  lastRun: Date | null,
-  now = new Date()
-): boolean {
-  if (!schedule) return false;
-  const lookback = lastRun ?? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const cursor = new Date(lookback);
-
-  cursor.setSeconds(0, 0);
-  if (cursor <= lookback) {
-    cursor.setMinutes(cursor.getMinutes() + 1);
-  }
-
-  const maxIterations = 14 * 24 * 60;
-  for (let i = 0; i < maxIterations; i += 1) {
-    if (cursor > now) return false;
-    if (cronMatches(cursor, schedule)) return true;
-    cursor.setMinutes(cursor.getMinutes() + 1);
-  }
-
-  return false;
-}
-
-/**
- * Run all cron-scheduled integrations that are due.
- * Optionally filter by direction (input/output).
- */
-export async function runScheduledIntegrations(
-  direction?: "input" | "output"
-): Promise<Array<{ id: string; success: boolean; message?: string }>> {
-  const TRIGGER_CRON = "CRON" as unknown as import("@prisma/client").IntegrationTrigger;
-  const directionMap: Record<string, import("@prisma/client").IntegrationDirection> = {
-    input: DIRECTION_INPUT,
-    output: DIRECTION_OUTPUT,
-  };
-  const where: Record<string, unknown> = {
-    trigger: TRIGGER_CRON,
-    status: STATUS_ACTIVE,
-    schedule: { not: null },
-  };
-  if (direction) {
-    where.direction = directionMap[direction];
-  }
-
-  const integrations = await prisma.spaceIntegration.findMany({
-    where,
-    select: {
-      id: true,
-      schedule: true,
-      lastRunAt: true,
-    },
-  });
-
-  const now = new Date();
-  const due = integrations.filter((si) =>
-    isCronDue(si.schedule, si.lastRunAt, now)
-  );
-
-  const results: Array<{ id: string; success: boolean; message?: string }> = [];
-
-  for (const si of due) {
-    try {
-      const result = await runSpaceIntegration(si.id);
-      results.push({ id: si.id, ...result });
-    } catch (error) {
-      results.push({
-        id: si.id,
-        success: false,
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  }
-
-  return results;
 }
