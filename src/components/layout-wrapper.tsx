@@ -10,7 +10,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
 
   // Don't show navigation on auth pages, public verification pages, or setup
   const isAuthPage = pathname.startsWith('/auth/');
-  const isVerifyPage = pathname.startsWith('/verify/');
+  const isVerifyPage = pathname === '/verify' || pathname.startsWith('/verify/');
   const isSetupPage = pathname === '/setup';
 
   if (isAuthPage || isVerifyPage || isSetupPage) {

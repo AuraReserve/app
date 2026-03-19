@@ -70,7 +70,7 @@ export default async function middleware(req: NextRequest) {
   // ── 3. Authentication ────────────────────────────────────────
 
   // Public routes that don't require authentication
-  const publicRoutes = ["/auth/signin", "/auth/signup", "/auth/error", "/setup"];
+  const publicRoutes = ["/auth/signin", "/auth/signup", "/auth/error", "/auth/two-factor", "/auth/forgot-password", "/auth/reset-password", "/auth/verify-email", "/setup", "/verify"];
 
   // API routes that are public
   const publicApiRoutes = ["/api/auth", "/api/health", "/api/v1/reserves", "/api/setup"];

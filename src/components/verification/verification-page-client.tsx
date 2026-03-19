@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   CheckCircle2,
@@ -15,6 +16,8 @@ import {
   Shield,
   Hash,
   FileJson,
+  Clock,
+  Layers,
 } from "lucide-react";
 
 interface Snapshot {
@@ -26,15 +29,14 @@ interface Snapshot {
 
 interface VerificationResult {
   verified: boolean;
-  dataMatch: boolean | null;
   snapshot: {
     rootHash: string | null;
     timestamp: string;
     leafCount: number | null;
     totalBalance: number | null;
   };
+  computedLeafHash: string;
   leaf: {
-    leafId: string;
     leafHash: string;
     leafIndex: number;
     leafData: Record<string, unknown>;
@@ -55,10 +57,10 @@ interface VerificationPageClientProps {
   snapshots: Snapshot[];
 }
 
-const EXAMPLE_JSON = JSON.stringify(
-  { leafId: "your-id", rootHash: "abc123...", expectedData: { balance: 100 } },
+const EXAMPLE_LEAF = JSON.stringify(
+  { userId: "user_004", balance: 0.01, currency: "BTC" },
   null,
-  2
+  2,
 );
 
 export function VerificationPageClient({
@@ -69,14 +71,23 @@ export function VerificationPageClient({
   artifactType,
   snapshots,
 }: VerificationPageClientProps) {
-  const [jsonInput, setJsonInput] = useState("");
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string>(
+    snapshots[0]?.id ?? "__manual",
+  );
+  const [manualRootHash, setManualRootHash] = useState("");
+  const [leafDataInput, setLeafDataInput] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [showProof, setShowProof] = useState(false);
 
-  const latestSnapshot = snapshots[0] ?? null;
+  const isManual = selectedSnapshotId === "__manual";
+  const selectedSnapshot = snapshots.find((s) => s.id === selectedSnapshotId);
+
+  const rootHash = isManual
+    ? manualRootHash.trim() || null
+    : selectedSnapshot?.merkleRoot ?? null;
 
   const handleVerify = async () => {
     setParseError(null);
@@ -84,31 +95,23 @@ export function VerificationPageClient({
     setResult(null);
     setShowProof(false);
 
-    // Parse JSON input
-    let parsed: Record<string, unknown>;
+    if (!leafDataInput.trim()) {
+      setParseError("Please paste your data as a JSON object.");
+      return;
+    }
+
+    let data: Record<string, unknown>;
     try {
-      parsed = JSON.parse(jsonInput);
+      const parsed = JSON.parse(leafDataInput);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        setParseError("Data must be a JSON object.");
+        return;
+      }
+      data = parsed;
     } catch {
       setParseError("Invalid JSON. Please check the format and try again.");
       return;
     }
-
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      setParseError("Input must be a JSON object.");
-      return;
-    }
-
-    const leafId = parsed.leafId;
-    if (typeof leafId !== "string" || !leafId.trim()) {
-      setParseError('Missing required field "leafId" (string).');
-      return;
-    }
-
-    const rootHash = typeof parsed.rootHash === "string" ? parsed.rootHash : null;
-    const expectedData =
-      parsed.expectedData && typeof parsed.expectedData === "object" && !Array.isArray(parsed.expectedData)
-        ? (parsed.expectedData as Record<string, unknown>)
-        : null;
 
     setIsVerifying(true);
 
@@ -118,18 +121,18 @@ export function VerificationPageClient({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ leafId: leafId.trim(), rootHash, expectedData }),
-        }
+          body: JSON.stringify({ data, rootHash }),
+        },
       );
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        setError(data?.error ?? `Verification failed (${res.status})`);
+        const body = await res.json().catch(() => null);
+        setError(body?.error ?? `Verification failed (${res.status})`);
         return;
       }
 
-      const data: VerificationResult = await res.json();
-      setResult(data);
+      const body: VerificationResult = await res.json();
+      setResult(body);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -150,51 +153,162 @@ export function VerificationPageClient({
           Verify Your Data
         </h1>
         <p className="text-slate-500 mt-1">
-          Verify that your data is included in this reserve&apos;s Merkle tree proof.
+          Paste your data below to cryptographically verify that it is included
+          in this reserve&apos;s Merkle tree.
         </p>
         <div className="flex items-center gap-2 mt-2">
           <Badge variant="outline">
             {artifactType.replace(/_/g, " ")}
           </Badge>
-          {latestSnapshot && (
+          {snapshots.length > 0 && (
             <span className="text-xs text-slate-400">
-              Latest snapshot: {new Date(latestSnapshot.timestamp).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })} ({latestSnapshot.leafCount} leaves)
+              {snapshots.length} snapshot{snapshots.length !== 1 && "s"}{" "}
+              available
             </span>
           )}
         </div>
       </div>
 
-      {/* JSON Input */}
+      {/* Snapshot Selection */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            Snapshot
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {snapshots.length > 0 ? (
+            <div className="space-y-2">
+              <Label className="text-sm">
+                Select a snapshot to verify against
+              </Label>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {snapshots.map((snapshot) => (
+                  <label
+                    key={snapshot.id}
+                    className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                      selectedSnapshotId === snapshot.id
+                        ? "border-blue-300 bg-blue-50"
+                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="snapshot"
+                      value={snapshot.id}
+                      checked={selectedSnapshotId === snapshot.id}
+                      onChange={() => setSelectedSnapshotId(snapshot.id)}
+                      className="accent-blue-600"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Clock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <span className="text-slate-700">
+                          {new Date(snapshot.timestamp).toLocaleDateString(
+                            "en-US",
+                            {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            },
+                          )}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {snapshot.leafCount} leaves
+                        </span>
+                      </div>
+                      {snapshot.merkleRoot && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <Hash className="w-3 h-3 text-slate-300 flex-shrink-0" />
+                          <span className="font-mono text-xs text-slate-400 truncate">
+                            {snapshot.merkleRoot}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">
+              No snapshots available for this stream.
+            </p>
+          )}
+
+          {/* Manual root hash option */}
+          <div className="pt-2 border-t border-slate-100">
+            <label
+              className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                isManual
+                  ? "border-blue-300 bg-blue-50"
+                  : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+              }`}
+            >
+              <input
+                type="radio"
+                name="snapshot"
+                value="__manual"
+                checked={isManual}
+                onChange={() => setSelectedSnapshotId("__manual")}
+                className="accent-blue-600"
+              />
+              <span className="text-sm text-slate-700">
+                Enter root hash manually
+              </span>
+            </label>
+            {isManual && (
+              <div className="mt-2">
+                <Input
+                  placeholder="Paste the Merkle root hash..."
+                  value={manualRootHash}
+                  onChange={(e) => setManualRootHash(e.target.value)}
+                  className="font-mono text-sm"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Show selected root hash */}
+          {rootHash && !isManual && (
+            <div className="text-xs text-slate-500 flex items-center gap-1">
+              <Hash className="w-3 h-3" />
+              Root: <span className="font-mono">{rootHash}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Data Input */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <FileJson className="w-4 h-4" />
-            Verification Data
+            Your Data
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="jsonInput" className="text-sm">
-              Paste your verification JSON
+            <Label htmlFor="leafData" className="text-sm">
+              Paste your data as JSON
             </Label>
             <Textarea
-              id="jsonInput"
-              placeholder={EXAMPLE_JSON}
-              value={jsonInput}
+              id="leafData"
+              placeholder={EXAMPLE_LEAF}
+              value={leafDataInput}
               onChange={(e) => {
-                setJsonInput(e.target.value);
+                setLeafDataInput(e.target.value);
                 setParseError(null);
               }}
               className="mt-1 font-mono text-sm min-h-[140px]"
             />
             <p className="text-xs text-slate-400 mt-1.5">
-              Required: <code className="bg-slate-100 px-1 rounded">leafId</code>.
-              Optional: <code className="bg-slate-100 px-1 rounded">rootHash</code> (defaults to latest snapshot),{" "}
-              <code className="bg-slate-100 px-1 rounded">expectedData</code> (verifies your data matches).
+              Your data will be hashed and checked against the Merkle tree. If
+              even a single value differs, the hash won&apos;t match and
+              verification will fail.
             </p>
           </div>
 
@@ -206,7 +320,7 @@ export function VerificationPageClient({
 
           <Button
             onClick={handleVerify}
-            disabled={isVerifying || !jsonInput.trim()}
+            disabled={isVerifying || !leafDataInput.trim()}
             className="w-full"
           >
             {isVerifying ? (
@@ -254,8 +368,10 @@ export function VerificationPageClient({
                   }`}
                 >
                   {result.verified
-                    ? "Verified \u2014 Your data is included"
-                    : "Not Found"}
+                    ? "Verified \u2014 Your data is in the tree"
+                    : result.leaf
+                      ? "Invalid \u2014 Proof verification failed"
+                      : "Not Found \u2014 Hash not in this snapshot"}
                 </h3>
                 <p
                   className={`text-sm mt-1 ${
@@ -263,66 +379,56 @@ export function VerificationPageClient({
                   }`}
                 >
                   {result.verified
-                    ? `Your entry was found in the snapshot from ${new Date(
-                        result.snapshot.timestamp
+                    ? `Your data was cryptographically verified against the snapshot from ${new Date(
+                        result.snapshot.timestamp,
                       ).toLocaleDateString("en-US", {
                         year: "numeric",
                         month: "long",
                         day: "numeric",
                       })}.`
-                    : "Your entry was not found in the selected snapshot."}
+                    : result.leaf
+                      ? "The leaf was found but the Merkle proof could not be verified against the root hash."
+                      : "The hash of your data does not match any leaf in this snapshot. Check that your data is exactly correct \u2014 even small differences will produce a different hash."}
                 </p>
 
-                {/* Data match indicator */}
-                {result.dataMatch !== null && (
-                  <div className="mt-3">
-                    {result.dataMatch ? (
-                      <Badge className="bg-green-100 text-green-800 border-green-200">
-                        Data matches your expected values
-                      </Badge>
-                    ) : (
-                      <Badge variant="destructive">
-                        Data does NOT match your expected values
-                      </Badge>
-                    )}
+                {/* Hash details */}
+                <div className="mt-4 space-y-2">
+                  <div className="text-sm">
+                    <span className="text-slate-500">Your data hashes to:</span>
+                    <div className="font-mono text-xs break-all mt-0.5 text-slate-700">
+                      {result.computedLeafHash}
+                    </div>
                   </div>
-                )}
 
-                {/* Leaf details */}
-                {result.leaf && (
-                  <div className="mt-4 space-y-2">
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-slate-500">Leaf ID:</span>{" "}
-                        <span className="font-mono">{result.leaf.leafId}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Leaf Index:</span>{" "}
-                        <span className="font-mono">{result.leaf.leafIndex}</span>
-                      </div>
-                      {result.leaf.value !== null && (
+                  {/* Leaf details (only shown when found) */}
+                  {result.leaf && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
-                          <span className="text-slate-500">Value:</span>{" "}
-                          <span className="font-mono">{result.leaf.value}</span>
+                          <span className="text-slate-500">Leaf Index:</span>{" "}
+                          <span className="font-mono">
+                            {result.leaf.leafIndex}
+                          </span>
                         </div>
-                      )}
-                    </div>
-
-                    <div className="text-sm">
-                      <span className="text-slate-500">Leaf Hash:</span>
-                      <div className="font-mono text-xs break-all mt-0.5 text-slate-700">
-                        {result.leaf.leafHash}
+                        {result.leaf.value !== null && (
+                          <div>
+                            <span className="text-slate-500">Value:</span>{" "}
+                            <span className="font-mono">
+                              {result.leaf.value}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    </div>
 
-                    <div className="text-sm">
-                      <span className="text-slate-500">Stored Data:</span>
-                      <pre className="mt-1 p-2 bg-white rounded border text-xs overflow-x-auto">
-                        {JSON.stringify(result.leaf.leafData, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
+                      <div className="text-sm">
+                        <span className="text-slate-500">Stored Data:</span>
+                        <pre className="mt-1 p-2 bg-white rounded border text-xs overflow-x-auto">
+                          {JSON.stringify(result.leaf.leafData, null, 2)}
+                        </pre>
+                      </div>
+                    </>
+                  )}
+                </div>
 
                 {/* Snapshot info */}
                 <div className="mt-4 pt-3 border-t border-slate-200 text-sm text-slate-500">
@@ -354,7 +460,9 @@ export function VerificationPageClient({
                       <div className="mt-2 p-3 bg-white rounded border text-xs font-mono space-y-2">
                         <div>
                           <span className="text-slate-500">Leaf hash:</span>
-                          <div className="break-all">{result.leaf?.leafHash}</div>
+                          <div className="break-all">
+                            {result.computedLeafHash}
+                          </div>
                         </div>
                         <div className="text-slate-500 font-sans text-xs">
                           Proof path ({result.proof.path.length} levels):
@@ -368,7 +476,9 @@ export function VerificationPageClient({
                           </div>
                         ))}
                         <div className="pt-2 border-t">
-                          <span className="text-slate-500">Expected root:</span>
+                          <span className="text-slate-500">
+                            Expected root:
+                          </span>
                           <div className="break-all">
                             {result.snapshot.rootHash}
                           </div>

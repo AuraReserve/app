@@ -243,7 +243,7 @@ export function TwoFactorSetupDialog({
                     Or enter this code manually:
                   </p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 px-3 py-2 bg-slate-100 rounded text-sm font-mono text-center select-all">
+                    <code className="flex-1 px-3 py-2 bg-slate-100 rounded text-sm font-mono text-center select-all break-all">
                       {secret}
                     </code>
                     <Button

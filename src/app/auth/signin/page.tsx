@@ -56,21 +56,25 @@ export default function SignIn() {
     setLoginError(null);
 
     try {
+      // Store callbackUrl for 2FA redirect (onTwoFactorRedirect in auth-client reads this)
+      sessionStorage.setItem("auth_callback_url", callbackUrl);
+
       const result = await signIn.email({
         email,
         password,
         callbackURL: callbackUrl,
       });
 
+      // 2FA redirect is handled by onTwoFactorRedirect in auth-client.ts
+      if (result.data?.twoFactorRedirect) {
+        return;
+      }
+
       if (result.error) {
-        // Check if 2FA is required
-        if (result.error.message?.includes("two-factor") || result.error.code === "TWO_FACTOR_REQUIRED") {
-          router.push(`/auth/two-factor?callbackUrl=${encodeURIComponent(callbackUrl)}`);
-          return;
-        }
         setLoginError(result.error.message || "Invalid email or password");
       } else {
         // Success - redirect to callback URL
+        sessionStorage.removeItem("auth_callback_url");
         router.push(callbackUrl);
         router.refresh();
       }

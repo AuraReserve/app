@@ -30,10 +30,9 @@ model User {
   createdDate           DateTime  @default(now()) @map("created_date") // Legacy field
   // 2FA fields (Better Auth twoFactor plugin)
   twoFactorEnabled      Boolean   @default(false) @map("two_factor_enabled")
-  twoFactorSecret       String?   @map("two_factor_secret")
-  twoFactorBackupCodes  String?   @map("two_factor_backup_codes") // JSON array stored as string
 
   // Relations
+  twoFactorData       TwoFactor?       // Better Auth twoFactor plugin data
   createdSpaces       Space[]          @relation("SpaceCreator")
   integrationApiKeysCreated  IntegrationApiKey[]  @relation("IntegrationApiKeyCreator")
   createdStreams      DataStream[]     @relation("StreamCreator")
@@ -177,6 +176,18 @@ model Verification {
 
   @@index([identifier])
   @@map("verifications")
+}
+
+// TwoFactor model - Better Auth twoFactor plugin data
+model TwoFactor {
+  id          String @id @default(cuid())
+  secret      String // Encrypted TOTP secret
+  backupCodes String @map("backup_codes") // Encrypted backup codes JSON
+  userId      String @unique @map("user_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("two_factors")
 }
 
 // Space model - Pure organizational container for reserve tracking

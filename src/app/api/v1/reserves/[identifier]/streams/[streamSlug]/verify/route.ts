@@ -5,12 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { getStoreBySlug } from "@/lib/dal";
 import { isMerkleArtifactType, artifactTypeToLower } from "@/lib/artifact-types";
 import { getBuilder } from "@/lib/merkle";
+import { hashLeaf } from "@/lib/merkle/hash";
 
 /**
  * POST /api/v1/reserves/{identifier}/streams/{streamSlug}/verify
- * Public verification endpoint — verifies leaf inclusion in a merkle snapshot.
+ * Public verification endpoint — cryptographically verifies leaf inclusion
+ * in a merkle snapshot by hashing the provided data and checking the proof.
  *
- * Body: { leafId: string, rootHash?: string | null, expectedData?: Record<string, unknown> }
+ * Body: { data: Record<string, unknown>, rootHash?: string | null }
  */
 export async function POST(
   request: NextRequest,
@@ -51,18 +53,20 @@ export async function POST(
 
     // Parse body
     const body = await request.json().catch(() => null);
-    if (!body || typeof body.leafId !== "string" || !body.leafId.trim()) {
+    if (!body || typeof body.data !== "object" || body.data === null || Array.isArray(body.data)) {
       return NextResponse.json(
-        { error: "leafId is required" },
+        { error: '"data" is required and must be a JSON object' },
         { status: 400 },
       );
     }
 
-    const { leafId, rootHash, expectedData } = body as {
-      leafId: string;
+    const { data, rootHash } = body as {
+      data: Record<string, unknown>;
       rootHash?: string | null;
-      expectedData?: Record<string, unknown> | null;
     };
+
+    // Hash the user-provided data
+    const computedLeafHash = hashLeaf(data);
 
     // Find the target entry (by root hash or latest)
     let entry: { id: string; timestamp: Date; artifactData: unknown } | null = null;
@@ -94,54 +98,38 @@ export async function POST(
     const artifactData = entry.artifactData as Record<string, unknown> | null;
     const entryMerkleRoot = (artifactData?.merkleRoot as string) ?? null;
 
-    // Find the leaf
+    // Look up the leaf by its hash
     const leaf = await prisma.streamEntryLeaf.findFirst({
-      where: { entryId: entry.id, leafId },
+      where: { entryId: entry.id, leafHash: computedLeafHash },
     });
 
     if (!leaf) {
       return NextResponse.json({
         verified: false,
-        dataMatch: null,
         snapshot: {
           rootHash: entryMerkleRoot,
           timestamp: entry.timestamp,
           leafCount: artifactData?.leafCount ?? null,
           totalBalance: artifactData?.totalBalance ?? null,
         },
+        computedLeafHash,
         leaf: null,
         proof: null,
       });
     }
 
-    // Check data match if expectedData provided
-    let dataMatch: boolean | null = null;
-    if (expectedData && typeof expectedData === "object") {
-      const leafData = leaf.leafData as Record<string, unknown> | null;
-      if (leafData) {
-        dataMatch = Object.entries(expectedData).every(
-          ([key, value]) => {
-            const leafValue = leafData[key];
-            if (typeof value === "number" && typeof leafValue === "number") {
-              return Math.abs(value - leafValue) < 1e-10;
-            }
-            return leafValue === value;
-          }
-        );
-      } else {
-        dataMatch = false;
-      }
-    }
-
-    // Generate proof if tree data available
+    // Generate and verify the Merkle proof
     let proof: { path: string[]; directions: ("left" | "right")[] } | null = null;
-    if (artifactData && leaf.leafIndex !== null) {
+    let proofValid = false;
+
+    if (artifactData && leaf.leafIndex !== null && entryMerkleRoot) {
       try {
         const builder = getBuilder(artifactTypeToLower(stream.artifactType));
         const leafIdentifier = artifactData.nodeStore ? leaf.leafId : leaf.leafIndex;
         const generated = builder.generateProof(artifactData as Record<string, unknown>, leafIdentifier);
         if (generated) {
           proof = generated;
+          proofValid = builder.verifyProof(computedLeafHash, generated, entryMerkleRoot);
         }
       } catch {
         // Builder not found or proof generation failed
@@ -149,16 +137,15 @@ export async function POST(
     }
 
     return NextResponse.json({
-      verified: true,
-      dataMatch,
+      verified: proofValid,
       snapshot: {
         rootHash: entryMerkleRoot,
         timestamp: entry.timestamp,
         leafCount: artifactData?.leafCount ?? null,
         totalBalance: artifactData?.totalBalance ?? null,
       },
+      computedLeafHash,
       leaf: {
-        leafId: leaf.leafId,
         leafHash: leaf.leafHash,
         leafIndex: leaf.leafIndex,
         leafData: leaf.leafData,

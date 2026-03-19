@@ -58,12 +58,12 @@ export default function TwoFactorVerification() {
         }
       }
 
-      // Successfully verified, redirect to callback URL
-      router.push(callbackUrl);
-      router.refresh();
+      // Successfully verified — use full navigation to ensure session cookie is applied
+      window.location.href = callbackUrl;
     } catch (err) {
       console.error("2FA verification error:", err);
       setError("An unexpected error occurred. Please try again.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -294,12 +294,6 @@ export default function TwoFactorVerification() {
             </CardContent>
           </Card>
 
-          <p className="text-xs text-center text-muted-foreground/70 mt-4">
-            Lost access to your authenticator?{" "}
-            <Link href="/auth/signin" className="text-amber-600 hover:text-amber-700">
-              Contact support
-            </Link>
-          </p>
         </div>
       </div>
     </div>

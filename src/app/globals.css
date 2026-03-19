@@ -335,6 +335,5 @@ a[aria-disabled="true"] {
 
 /* Selection styling */
 ::selection {
-  background: hsl(var(--gold) / 0.2);
-  color: hsl(var(--foreground));
+  background: hsl(var(--gold) / 0.4);
 }
