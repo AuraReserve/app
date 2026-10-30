@@ -14,7 +14,7 @@ echo "Database is up"
 
 # Run database migrations
 echo "Running database migrations..."
-pnpm exec prisma migrate deploy
+./node_modules/.bin/prisma migrate deploy
 
 echo "Migrations complete"
 
@@ -36,7 +36,7 @@ const { Client } = require('pg');
 # Optionally run full seed script (set SEED_DATABASE=true to enable)
 if [ "${SEED_DATABASE:-false}" = "true" ]; then
   echo "Running seed script..."
-  pnpm exec tsx prisma/seed.ts
+  ./node_modules/.bin/tsx prisma/seed.ts
   echo "Seed complete"
 fi
 

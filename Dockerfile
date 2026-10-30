@@ -63,9 +63,13 @@ COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src ./src
 
-# Copy package files and install only what's needed for migrations/seed
+# Copy package files and install only what's needed for migrations/seed.
+# Drop the standalone's traced node_modules first: it contains pruned package
+# dirs (e.g. @prisma/client) with the same .pnpm names, so pnpm would treat
+# them as installed and skip them, leaving the Prisma CLI without its wasm files.
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
-RUN DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder \
+RUN rm -rf node_modules && \
+    DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder \
     pnpm install --prod --frozen-lockfile --ignore-scripts && \
     pnpm add prisma tsx && \
     DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder \
