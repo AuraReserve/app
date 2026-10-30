@@ -67,18 +67,16 @@ export function TwoFactorSetupDialog({
         return;
       }
 
-      if (result.data?.totpURI) {
-        setTotpURI(result.data.totpURI);
+      const data = result.data;
+      if (data && "totpURI" in data) {
+        setTotpURI(data.totpURI);
         // Extract secret from URI
-        const secretMatch = result.data.totpURI.match(/secret=([^&]+)/);
+        const secretMatch = data.totpURI.match(/secret=([^&]+)/);
         if (secretMatch) {
           setSecret(secretMatch[1]);
         }
+        setBackupCodes(data.backupCodes);
         setStep("qr");
-      }
-
-      if (result.data?.backupCodes) {
-        setBackupCodes(result.data.backupCodes);
       }
     } catch (err) {
       console.error("2FA setup error:", err);

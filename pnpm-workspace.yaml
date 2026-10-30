@@ -1,0 +1,15 @@
+# Dependency build scripts approved to run during install (pnpm 10+).
+# These ship native binaries / generate clients and are required for the app
+# to build and run.
+allowBuilds:
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  sharp: true
+  unrs-resolver: true
+onlyBuiltDependencies:
+  - '@prisma/engines'
+  - esbuild
+  - prisma
+  - sharp
+  - unrs-resolver

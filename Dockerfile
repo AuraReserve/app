@@ -7,7 +7,7 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 COPY prisma ./prisma/
 COPY prisma.config.ts ./
 
@@ -64,7 +64,7 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src ./src
 
 # Copy package files and install only what's needed for migrations/seed
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 RUN DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder \
     pnpm install --prod --frozen-lockfile --ignore-scripts && \
     pnpm add prisma tsx && \

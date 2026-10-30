@@ -45,6 +45,7 @@ model User {
   invitedUsers        User[]           @relation("UserInvitations")
   accounts            Account[]        // OAuth accounts
   sessions            Session[]        // User sessions
+  twoFactors          TwoFactor[]      // Better Auth twoFactor plugin
 
   @@index([email])
   @@index([role])
@@ -164,6 +165,23 @@ model Session {
   @@index([userId])
   @@index([token])
   @@map("sessions")
+}
+
+// TwoFactor model - TOTP secret + backup codes (Better Auth twoFactor plugin)
+model TwoFactor {
+  id                      String    @id @default(cuid())
+  secret                  String
+  backupCodes             String    @map("backup_codes")
+  userId                  String    @map("user_id")
+  verified                Boolean?  @default(true)
+  failedVerificationCount Int?      @default(0) @map("failed_verification_count")
+  lockedUntil             DateTime? @map("locked_until")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([secret])
+  @@index([userId])
+  @@map("two_factors")
 }
 
 // Verification model - Email verification tokens (Better Auth)
